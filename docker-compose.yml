@@ -1,0 +1,210 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                     QuantVision v2.0 - Docker Compose                        ║
+# ║                         完整生产环境配置                                     ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+#
+# 使用方法:
+#   docker-compose up -d              # 启动所有服务
+#   docker-compose up -d postgres     # 只启动数据库
+#   docker-compose down               # 停止所有服务
+#   docker-compose logs -f backend    # 查看后端日志
+#
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # PostgreSQL + TimescaleDB (时序数据库)
+  # ============================================================================
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: quantvision-postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-quantvision}
+      POSTGRES_USER: ${DB_USER:-quantvision}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-quantvision123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-quantvision} -d ${DB_NAME:-quantvision}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Redis (缓存和消息队列)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: quantvision-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Backend (FastAPI)
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quantvision-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DATABASE_URL=postgresql://${DB_USER:-quantvision}:${DB_PASSWORD:-quantvision123}@postgres:5432/${DB_NAME:-quantvision}
+      - REDIS_URL=redis://redis:6379
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      - FRED_API_KEY=${FRED_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 4
+      --access-log
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Frontend (React + Vite)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quantvision-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:${BACKEND_PORT:-8000}
+      - VITE_WS_URL=ws://localhost:${BACKEND_PORT:-8000}
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Celery Worker (异步任务)
+  # ============================================================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quantvision-celery-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-quantvision}:${DB_PASSWORD:-quantvision123}@postgres:5432/${DB_NAME:-quantvision}
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Celery Beat (定时任务调度器)
+  # ============================================================================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quantvision-celery-beat
+    restart: unless-stopped
+    depends_on:
+      - celery-worker
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-quantvision}:${DB_PASSWORD:-quantvision123}@postgres:5432/${DB_NAME:-quantvision}
+      - REDIS_URL=redis://redis:6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    networks:
+      - quantvision-network
+
+  # ============================================================================
+  # Flower (Celery 监控面板)
+  # ============================================================================
+  flower:
+    image: mher/flower:0.9.7
+    container_name: quantvision-flower
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+    command: celery flower --broker=redis://redis:6379/0 --port=5555
+    networks:
+      - quantvision-network
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  quantvision-network:
+    driver: bridge

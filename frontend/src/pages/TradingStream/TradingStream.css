@@ -1,0 +1,117 @@
+/**
+ * 实时交易流页面样式
+ */
+
+.trading-stream-page {
+  min-height: 100vh;
+  background: var(--dark-bg, #0a0a0f);
+}
+
+/* 统计卡片 */
+.trading-stream-page .ant-statistic-title {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+.trading-stream-page .ant-statistic-content-suffix {
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+/* 事件列表 */
+.trading-stream-page .ant-list-item {
+  padding: 12px 16px;
+  transition: background-color 0.2s;
+}
+
+.trading-stream-page .ant-list-item:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* 卡片样式 */
+.trading-stream-page .ant-card-head {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.trading-stream-page .ant-card-head-title {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* 事件动画 */
+@keyframes eventSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.trading-stream-page .ant-list-item:first-child {
+  animation: eventSlideIn 0.3s ease-out;
+}
+
+/* 价格闪烁动画 */
+@keyframes priceFlashUp {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(82, 196, 26, 0.2); }
+}
+
+@keyframes priceFlashDown {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(255, 77, 79, 0.2); }
+}
+
+.price-flash-up {
+  animation: priceFlashUp 0.5s ease-out;
+}
+
+.price-flash-down {
+  animation: priceFlashDown 0.5s ease-out;
+}
+
+/* 连接状态脉冲动画 */
+@keyframes connectionPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.connection-reconnecting {
+  animation: connectionPulse 1s ease-in-out infinite;
+}
+
+/* 滚动条样式 */
+.trading-stream-page .ant-card-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.trading-stream-page .ant-card-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.trading-stream-page .ant-card-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.trading-stream-page .ant-card-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 空状态 */
+.trading-stream-page .ant-empty-description {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .trading-stream-page .grid-cols-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .trading-stream-page .col-span-2 {
+    grid-column: span 1;
+  }
+}

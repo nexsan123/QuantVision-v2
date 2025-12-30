@@ -1,0 +1,49 @@
+# QuantVision v2.0 依赖清单
+# Python >= 3.11
+
+# === Web 框架 ===
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+starlette>=0.35.0
+
+# === 数据库 ===
+sqlalchemy>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+psycopg2-binary>=2.9.9
+
+# === 缓存与消息队列 ===
+redis>=5.0.0
+celery>=5.3.0
+
+# === 数据验证 ===
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+email-validator>=2.1.0
+
+# === 数据处理 ===
+numpy>=1.26.0
+pandas>=2.1.0
+scipy>=1.11.0
+numba>=0.58.0
+
+# === 金融数据 ===
+alpaca-py>=0.18.0
+yfinance>=0.2.35
+
+# === 工具库 ===
+python-dotenv>=1.0.0
+httpx>=0.26.0
+tenacity>=8.2.0
+structlog>=24.1.0
+
+# === 测试 ===
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+httpx>=0.26.0
+
+# === 开发工具 ===
+ruff>=0.1.0
+mypy>=1.8.0
+pre-commit>=3.6.0

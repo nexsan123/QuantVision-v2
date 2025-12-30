@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 深色主题变量 */
+:root {
+  --color-bg: #0a0a0f;
+  --color-card: #12121a;
+  --color-border: #1e1e2e;
+  --color-hover: #1a1a28;
+
+  --color-profit: #22c55e;
+  --color-loss: #ef4444;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+}
+
+/* 基础样式 */
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a2a3a;
+}
+
+/* 数字显示样式 */
+.number-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.number-profit {
+  color: var(--color-profit);
+}
+
+.number-loss {
+  color: var(--color-loss);
+}
+
+/* 卡片样式 */
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.card-hover:hover {
+  background: var(--color-hover);
+  border-color: #2a2a3a;
+}
+
+/* 动画 */
+.animate-in {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Ant Design 覆盖 */
+.ant-table {
+  background: transparent !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--color-card) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--color-hover) !important;
+}
+
+.ant-btn-primary {
+  background: #3b82f6 !important;
+}
+
+.ant-btn-primary:hover {
+  background: #2563eb !important;
+}
+
+/* 图表容器 */
+.chart-container {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}

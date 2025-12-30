@@ -1,0 +1,111 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                     QuantVision v2.0 - Docker Compose (Dev)                  ║
+# ║                         开发环境配置 (仅数据库服务)                          ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+#
+# 使用方法:
+#   docker-compose -f docker-compose.dev.yml up -d    # 启动数据库
+#   docker-compose -f docker-compose.dev.yml down     # 停止数据库
+#
+# 说明:
+#   此配置仅包含 PostgreSQL 和 Redis，适合本地开发时使用。
+#   前后端服务在本地运行，获得更快的热重载体验。
+#
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # PostgreSQL + TimescaleDB (时序数据库)
+  # ============================================================================
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: quantvision-dev-postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-quantvision}
+      POSTGRES_USER: ${DB_USER:-quantvision}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-quantvision123}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-quantvision} -d ${DB_NAME:-quantvision}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - quantvision-dev-network
+
+  # ============================================================================
+  # Redis (缓存和消息队列)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: quantvision-dev-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quantvision-dev-network
+
+  # ============================================================================
+  # Adminer (数据库管理界面) - 可选
+  # ============================================================================
+  adminer:
+    image: adminer:latest
+    container_name: quantvision-dev-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: nette
+    networks:
+      - quantvision-dev-network
+
+  # ============================================================================
+  # Redis Commander (Redis 管理界面) - 可选
+  # ============================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: quantvision-dev-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    networks:
+      - quantvision-dev-network
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  quantvision-dev-network:
+    driver: bridge
