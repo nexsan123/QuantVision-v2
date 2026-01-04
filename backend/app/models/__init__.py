@@ -6,18 +6,21 @@
 - 财务数据模型
 - 股票池模型
 - 数据血缘模型
+- 策略V2模型
 """
 
-from app.models.base import TimestampMixin, UUIDMixin
+from app.models.base import SoftDeleteMixin, TimestampMixin, UUIDMixin
 from app.models.data_lineage import DataLineage
 from app.models.financial_data import FinancialStatement
 from app.models.market_data import MacroData, StockOHLCV
+from app.models.strategy_v2 import StrategyStatusEnum, StrategyV2
 from app.models.universe import Universe, UniverseSnapshot
 
 __all__ = [
     # Mixins
     "UUIDMixin",
     "TimestampMixin",
+    "SoftDeleteMixin",
     # 市场数据
     "StockOHLCV",
     "MacroData",
@@ -28,4 +31,7 @@ __all__ = [
     "UniverseSnapshot",
     # 数据血缘
     "DataLineage",
+    # 策略V2
+    "StrategyV2",
+    "StrategyStatusEnum",
 ]

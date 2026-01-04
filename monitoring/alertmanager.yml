@@ -1,0 +1,126 @@
+# QuantVision - AlertManager Configuration
+# Phase 14: 生产部署
+
+global:
+  # SMTP configuration for email alerts
+  smtp_smarthost: 'smtp.gmail.com:587'
+  smtp_from: 'alerts@quantvision.io'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+
+  # Slack webhook URL
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+  # PagerDuty integration key
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Route configuration
+route:
+  # Default receiver
+  receiver: 'slack-notifications'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'job']
+
+  # Wait before sending first notification
+  group_wait: 30s
+
+  # Wait between sending batched notifications
+  group_interval: 5m
+
+  # Wait before re-sending a notification
+  repeat_interval: 4h
+
+  # Child routes for different severities
+  routes:
+    # Critical alerts go to PagerDuty
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts go to Slack
+    - match:
+        severity: warning
+      receiver: 'slack-notifications'
+      repeat_interval: 4h
+
+    # Trading alerts - always urgent
+    - match:
+        alertname: TradingSystemUnhealthy
+      receiver: 'pagerduty-critical'
+      group_wait: 0s
+
+    # Database alerts
+    - match:
+        job: postgres
+      receiver: 'database-team'
+
+# Inhibition rules
+inhibit_rules:
+  # If critical alert is firing, suppress warnings for same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+
+  # If backend is down, suppress dependent alerts
+  - source_match:
+      alertname: 'BackendDown'
+    target_match_re:
+      alertname: '(HighErrorRate|SlowResponseTime)'
+
+# Receivers
+receivers:
+  # Slack notifications
+  - name: 'slack-notifications'
+    slack_configs:
+      - channel: '#alerts'
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }} [{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}'
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Severity:* {{ .Labels.severity }}
+          *Source:* {{ .Labels.job }}
+          {{ end }}
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: '{{ template "grafana.link" . }}'
+          - type: button
+            text: 'Silence'
+            url: '{{ template "silence.link" . }}'
+
+  # PagerDuty for critical alerts
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        send_resolved: true
+        severity: critical
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          alertname: '{{ .CommonLabels.alertname }}'
+          severity: '{{ .CommonLabels.severity }}'
+          description: '{{ .CommonAnnotations.description }}'
+
+  # Email for database team
+  - name: 'database-team'
+    email_configs:
+      - to: 'database-team@quantvision.io'
+        send_resolved: true
+        headers:
+          Subject: '[{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}'
+
+  # Webhook for custom integrations
+  - name: 'webhook'
+    webhook_configs:
+      - url: 'http://backend:8000/api/v1/webhooks/alerts'
+        send_resolved: true
+
+# Templates
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

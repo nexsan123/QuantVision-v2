@@ -1,0 +1,203 @@
+# QuantVision - Prometheus Alert Rules
+# Phase 14: 生产部署
+
+groups:
+  # ============================================================================
+  # Application Alerts
+  # ============================================================================
+  - name: application
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          / sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      # Slow response time
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API response time"
+          description: "95th percentile response time is {{ $value | humanizeDuration }}"
+
+      # Backend down
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend service is down"
+          description: "Backend has been down for more than 1 minute"
+
+  # ============================================================================
+  # Database Alerts
+  # ============================================================================
+  - name: database
+    rules:
+      # High database connections
+      - alert: HighDatabaseConnections
+        expr: |
+          pg_stat_activity_count{datname="quantvision"}
+          / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connections at {{ $value | humanizePercentage }} of max"
+
+      # Database down
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "Database has been down for more than 1 minute"
+
+      # Long running queries
+      - alert: LongRunningQueries
+        expr: |
+          pg_stat_activity_max_tx_duration{datname="quantvision"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Long running database query detected"
+          description: "Query running for {{ $value | humanizeDuration }}"
+
+  # ============================================================================
+  # Redis Alerts
+  # ============================================================================
+  - name: redis
+    rules:
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been down for more than 1 minute"
+
+      # High Redis memory
+      - alert: HighRedisMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory at {{ $value | humanizePercentage }} of max"
+
+      # Redis connection errors
+      - alert: RedisConnectionErrors
+        expr: |
+          rate(redis_rejected_connections_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis rejecting connections"
+          description: "Redis is rejecting connections"
+
+  # ============================================================================
+  # Infrastructure Alerts
+  # ============================================================================
+  - name: infrastructure
+    rules:
+      # High CPU usage
+      - alert: HighCpuUsage
+        expr: |
+          100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value | humanize }}%"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanize }}%"
+
+      # Low disk space
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is {{ $value | humanize }}% available"
+
+      # High network errors
+      - alert: HighNetworkErrors
+        expr: |
+          rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High network errors on {{ $labels.instance }}"
+          description: "Network errors: {{ $value | humanize }}/s"
+
+  # ============================================================================
+  # Business Alerts
+  # ============================================================================
+  - name: business
+    rules:
+      # Trading system health
+      - alert: TradingSystemUnhealthy
+        expr: trading_system_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trading system is unhealthy"
+          description: "Trading system has been unhealthy for more than 2 minutes"
+
+      # High order failure rate
+      - alert: HighOrderFailureRate
+        expr: |
+          sum(rate(order_failures_total[5m]))
+          / sum(rate(order_submissions_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order failure rate"
+          description: "Order failure rate is {{ $value | humanizePercentage }}"
+
+      # Backtest queue backup
+      - alert: BacktestQueueBackup
+        expr: backtest_queue_size > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backtest queue is backing up"
+          description: "Queue size: {{ $value }} jobs"

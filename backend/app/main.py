@@ -109,7 +109,7 @@ def register_routes(app: FastAPI) -> None:
     所有 v1 版本的路由都挂载在 /api/v1 前缀下
     WebSocket 路由挂载在根路径
     """
-    from app.api.v1 import backtests, execution, factors, health, risk, strategy, validation
+    from app.api.v1 import ai_assistant, advanced_backtest, attribution, backtests, execution, factors, health, market_data, risk, risk_advanced, strategy, strategy_v2, trading, validation
     from app.websocket import trading_router
 
     # WebSocket 路由 (根路径)
@@ -153,9 +153,51 @@ def register_routes(app: FastAPI) -> None:
         prefix=settings.API_V1_PREFIX,
         tags=["执行系统"],
     )
+    # Phase 8: 7步策略构建器 V2 API
+    app.include_router(
+        strategy_v2.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["策略构建器V2"],
+    )
+    # Phase 8: AI助手 API
+    app.include_router(
+        ai_assistant.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["AI助手"],
+    )
+    # Phase 9: 高级回测 API
+    app.include_router(
+        advanced_backtest.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["高级回测"],
+    )
+    # Phase 10: 风险系统升级 API
+    app.include_router(
+        risk_advanced.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["风险系统升级"],
+    )
+    # Phase 11: \u6570\u636e\u5c42\u5347\u7ea7 API
+    app.include_router(
+        market_data.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["\u5e02\u573a\u6570\u636e"],
+    )
+    # Phase 12: \u6267\u884c\u5c42\u5347\u7ea7 API
+    app.include_router(
+        trading.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["\u4ea4\u6613"],
+    )
+    # Phase 13: \u5f52\u56e0\u4e0e\u62a5\u8868 API
+    app.include_router(
+        attribution.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["\u5f52\u56e0\u5206\u6790"],
+    )
 
 
-# 创建应用实例
+# \u521b\u5efa\u5e94\u7528\u5b9e\u4f8b
 app = create_app()
 
 

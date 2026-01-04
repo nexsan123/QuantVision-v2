@@ -1,0 +1,47 @@
+# QuantVision - Grafana Datasources Configuration
+# Phase 14: 生产部署
+
+apiVersion: 1
+
+datasources:
+  # Prometheus
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "2.40.0"
+
+  # Loki for logs
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  # PostgreSQL (for direct queries)
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    user: quantvision
+    secureJsonData:
+      password: ${DB_PASSWORD}
+    jsonData:
+      database: quantvision
+      sslmode: require
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+
+  # Redis
+  - name: Redis
+    type: redis-datasource
+    url: redis:6379
+    editable: false
