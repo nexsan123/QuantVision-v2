@@ -1,5 +1,6 @@
 """
 FastAPI 应用入口
+Sprint 13: 增强日志与监控
 
 应用生命周期管理、路由注册、中间件配置
 """
@@ -7,32 +8,18 @@ FastAPI 应用入口
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.core.redis import RedisClient
+from app.core.logging import configure_logging, get_logger, RequestLoggingMiddleware
 
 # 配置结构化日志
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.JSONRenderer() if settings.LOG_FORMAT == "json"
-        else structlog.dev.ConsoleRenderer(),
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-)
+configure_logging()
 
-logger = structlog.get_logger()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -96,6 +83,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 请求日志中间件 (Sprint 13)
+    app.add_middleware(
+        RequestLoggingMiddleware,
+        exclude_paths=["/api/v1/health", "/docs", "/openapi.json"],
+    )
+
     # 注册路由
     register_routes(app)
 
@@ -109,13 +102,19 @@ def register_routes(app: FastAPI) -> None:
     所有 v1 版本的路由都挂载在 /api/v1 前缀下
     WebSocket 路由挂载在根路径
     """
-    from app.api.v1 import ai_assistant, advanced_backtest, attribution, backtests, execution, factors, health, market_data, risk, risk_advanced, strategy, strategy_v2, trading, validation
-    from app.websocket import trading_router
+    from app.api.v1 import ai_assistant, advanced_backtest, alerts, attribution, backtests, conflict, deployment, drift, execution, factor_validation, factors, health, logs, metrics, notifications, manual_trade, market_data, pdt, positions, pre_market, realtime, replay, risk, risk_advanced, signal_radar, strategy, strategy_v2, templates, trade_attribution, trading, trading_cost, validation
+    from app.websocket import trading_router, alpaca_router
 
     # WebSocket 路由 (根路径)
     app.include_router(
         trading_router,
         tags=["WebSocket"],
+    )
+
+    # Alpaca WebSocket 路由 (Sprint 10)
+    app.include_router(
+        alpaca_router,
+        tags=["WebSocket - Alpaca"],
     )
 
     app.include_router(
@@ -195,9 +194,117 @@ def register_routes(app: FastAPI) -> None:
         prefix=settings.API_V1_PREFIX,
         tags=["\u5f52\u56e0\u5206\u6790"],
     )
+    # v2.1 Sprint 1: 策略部署 API
+    app.include_router(
+        deployment.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["策略部署"],
+    )
+    # v2.1 Sprint 2: 信号雷达 API
+    app.include_router(
+        signal_radar.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["信号雷达"],
+    )
+    # v2.1 Sprint 3: PDT 规则 API
+    app.include_router(
+        pdt.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["PDT规则"],
+    )
+    # v2.1 Sprint 3: 风险预警 API
+    app.include_router(
+        alerts.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["风险预警"],
+    )
+    # v2.1 Sprint 4: 策略漂移监控 API
+    app.include_router(
+        drift.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["漂移监控"],
+    )
+    # v2.1 Sprint 5: 因子有效性验证 API (PRD 4.3)
+    app.include_router(
+        factor_validation.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["因子验证"],
+    )
+    # v2.1 Sprint 5: 交易归因 API (PRD 4.5)
+    app.include_router(
+        trade_attribution.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["交易归因"],
+    )
+    # v2.1 Sprint 5: 策略冲突检测 API (PRD 4.6)
+    app.include_router(
+        conflict.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["冲突检测"],
+    )
+    # v2.1 Sprint 6: 交易成本配置 API (PRD 4.4)
+    app.include_router(
+        trading_cost.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["交易成本"],
+    )
+    # v2.1 Sprint 6: 策略模板库 API (PRD 4.13)
+    app.include_router(
+        templates.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["策略模板"],
+    )
+    # v2.1 Sprint 7: 手动交易 API (PRD 4.16)
+    app.include_router(
+        manual_trade.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["手动交易"],
+    )
+    # v2.1 Sprint 7: 分策略持仓管理 API (PRD 4.18)
+    app.include_router(
+        positions.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["持仓管理"],
+    )
+    # v2.1 Sprint 8: 日内交易 API (PRD 4.18.0-4.18.1)
+    app.include_router(
+        pre_market.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["日内交易"],
+    )
+    # v2.1 Sprint 9: 策略回放 API (PRD 4.17)
+    app.include_router(
+        replay.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["策略回放"],
+    )
+    # v2.1 Sprint 10: 实时监控 API
+    app.include_router(
+        realtime.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["实时监控"],
+    )
+    # v2.1 Sprint 13: 日志收集 API
+    app.include_router(
+        logs.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["日志"],
+    )
+    # v2.1 Sprint 13: 性能指标 API
+    app.include_router(
+        metrics.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["指标"],
+    )
+    # v2.1 Sprint 13: 通知管理 API
+    app.include_router(
+        notifications.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["通知"],
+    )
 
 
-# \u521b\u5efa\u5e94\u7528\u5b9e\u4f8b
+# 创建应用实例
 app = create_app()
 
 

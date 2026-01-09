@@ -1,194 +1,366 @@
-import { useState } from 'react'
-import { Row, Col, Input, Select, InputNumber, Button, Table, Tag, Modal, Form } from 'antd'
-import { PlusOutlined, SyncOutlined, CloseOutlined } from '@ant-design/icons'
-import { Card, NumberDisplay } from '@/components/ui'
-
-// 模拟持仓数据
-const mockPositions = [
-  { symbol: 'AAPL', qty: 100, avgPrice: 175.50, currentPrice: 178.52, pnl: 302, pnlPct: 0.0172, weight: 0.15 },
-  { symbol: 'MSFT', qty: 50, avgPrice: 365.00, currentPrice: 372.15, pnl: 357.5, pnlPct: 0.0196, weight: 0.12 },
-  { symbol: 'GOOGL', qty: 80, avgPrice: 140.00, currentPrice: 141.23, pnl: 98.4, pnlPct: 0.0088, weight: 0.10 },
-  { symbol: 'NVDA', qty: 30, avgPrice: 480.00, currentPrice: 475.50, pnl: -135, pnlPct: -0.0094, weight: 0.08 },
-]
-
-const mockOrders = [
-  { id: 'ORD001', symbol: 'AAPL', side: 'BUY', qty: 50, price: 178.00, status: 'pending', time: '15:28:32' },
-  { id: 'ORD002', symbol: 'TSLA', side: 'SELL', qty: 20, price: 245.00, status: 'filled', time: '14:15:08' },
-  { id: 'ORD003', symbol: 'AMZN', side: 'BUY', qty: 25, price: 185.50, status: 'cancelled', time: '11:42:55' },
-]
-
-const positionColumns = [
-  { title: '股票', dataIndex: 'symbol', key: 'symbol', render: (s: string) => <span className="font-medium">{s}</span> },
-  { title: '持仓', dataIndex: 'qty', key: 'qty', className: 'text-right font-mono' },
-  { title: '成本', dataIndex: 'avgPrice', key: 'avgPrice', className: 'text-right font-mono', render: (p: number) => `$${p.toFixed(2)}` },
-  { title: '现价', dataIndex: 'currentPrice', key: 'currentPrice', className: 'text-right font-mono', render: (p: number) => `$${p.toFixed(2)}` },
-  { title: '盈亏', dataIndex: 'pnl', key: 'pnl', className: 'text-right', render: (v: number) => (
-    <NumberDisplay value={v} type="currency" colorize showSign />
-  )},
-  { title: '盈亏%', dataIndex: 'pnlPct', key: 'pnlPct', className: 'text-right', render: (v: number) => (
-    <NumberDisplay value={v} type="percent" colorize showSign />
-  )},
-  { title: '权重', dataIndex: 'weight', key: 'weight', className: 'text-right', render: (v: number) => (
-    <span className="font-mono">{(v * 100).toFixed(1)}%</span>
-  )},
-  {
-    title: '操作',
-    key: 'action',
-    render: () => (
-      <Button size="small" danger>平仓</Button>
-    ),
-  },
-]
-
-const orderColumns = [
-  { title: '订单号', dataIndex: 'id', key: 'id', className: 'font-mono text-gray-400' },
-  { title: '股票', dataIndex: 'symbol', key: 'symbol' },
-  { title: '方向', dataIndex: 'side', key: 'side', render: (s: string) => (
-    <span className={s === 'BUY' ? 'text-profit' : 'text-loss'}>{s}</span>
-  )},
-  { title: '数量', dataIndex: 'qty', key: 'qty', className: 'text-right font-mono' },
-  { title: '价格', dataIndex: 'price', key: 'price', className: 'text-right font-mono', render: (p: number) => `$${p.toFixed(2)}` },
-  { title: '状态', dataIndex: 'status', key: 'status', render: (s: string) => {
-    const colors: Record<string, string> = { pending: 'orange', filled: 'green', cancelled: 'gray' }
-    const labels: Record<string, string> = { pending: '待成交', filled: '已成交', cancelled: '已取消' }
-    return <Tag color={colors[s]}>{labels[s]}</Tag>
-  }},
-  { title: '时间', dataIndex: 'time', key: 'time', className: 'font-mono text-gray-400' },
-  {
-    title: '操作',
-    key: 'action',
-    render: (_: unknown, record: { status: string }) => (
-      record.status === 'pending' ? (
-        <Button size="small" icon={<CloseOutlined />} danger>取消</Button>
-      ) : null
-    ),
-  },
-]
-
 /**
- * 交易执行页面
+ * 实时交易监控页面
+ * Sprint 3 重构: PRD 4.16 三栏布局
+ * UI 优化: 性能优化 - React.memo + useCallback + useMemo
  *
- * 功能:
- * - 持仓管理
- * - 下单
- * - 订单管理
+ * 布局设计:
+ * - 左侧 280px: 部署列表 + 信号雷达
+ * - 中间 flex: TradingView 图表
+ * - 右侧 288px: 持仓监控 + 订单管理
  */
-export default function Trading() {
-  const [orderModalOpen, setOrderModalOpen] = useState(false)
-  const [form] = Form.useForm()
+import { useState, useEffect, useCallback, useMemo, memo } from 'react'
+import { Button, Spin, Input } from 'antd'
+import { ExpandOutlined, CompressOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons'
+import EnvironmentSwitch, { TradingEnvironment } from '@/components/common/EnvironmentSwitch'
+import { PanelErrorBoundary } from '@/components/common/ErrorBoundary'
+import DeploymentListPanel from '@/components/TradingMonitor/DeploymentListPanel'
+import SignalRadarPanel from '@/components/TradingMonitor/SignalRadarPanel'
+import PositionMonitorPanel from '@/components/TradingMonitor/PositionMonitorPanel'
+import OrderPanel from '@/components/TradingMonitor/OrderPanel'
+import { TradingViewChart, TimeframeSelector, IndicatorPanel } from '@/components/Chart'
+import type { TimeFrame, IndicatorConfig } from '@/components/Chart'
+import { getDeployments } from '@/services/deploymentService'
+import type { Deployment } from '@/types/deployment'
 
-  const handleSubmitOrder = () => {
-    form.validateFields().then(() => {
-      setOrderModalOpen(false)
-      form.resetFields()
-    })
+// 默认指标配置 - 移到组件外避免重新创建
+const DEFAULT_INDICATORS: IndicatorConfig[] = [
+  { id: 'MASimple@tv-basicstudies', name: 'MA 20', inputs: { length: 20 } },
+  { id: 'RSI@tv-basicstudies', name: 'RSI', inputs: { length: 14 } },
+  { id: 'MACD@tv-basicstudies', name: 'MACD' },
+]
+
+// 左侧面板 - 使用 memo 防止不必要的重渲染
+interface LeftPanelProps {
+  collapsed: boolean
+  deployments: Deployment[]
+  selectedId?: string
+  onSelect: (deployment: Deployment) => void
+  strategyId: string
+  deploymentId: string
+  onToggle: () => void
+}
+
+const LeftPanel = memo(function LeftPanel({
+  collapsed,
+  deployments,
+  selectedId,
+  onSelect,
+  strategyId,
+  deploymentId,
+  onToggle,
+}: LeftPanelProps) {
+  const width = collapsed ? 48 : 280
+
+  return (
+    <aside
+      className="flex-shrink-0 border-r border-gray-800 bg-[#12122a] transition-all duration-300 flex flex-col"
+      style={{ width }}
+    >
+      {collapsed ? (
+        <div className="flex-1 flex flex-col items-center pt-4 gap-4">
+          <Button
+            type="text"
+            icon={<ExpandOutlined />}
+            onClick={onToggle}
+            className="text-gray-400"
+          />
+        </div>
+      ) : (
+        <>
+          <div className="h-[45%] border-b border-gray-800 overflow-hidden">
+            <PanelErrorBoundary title="部署列表">
+              <DeploymentListPanel
+                deployments={deployments}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+            </PanelErrorBoundary>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <PanelErrorBoundary title="信号雷达">
+              <SignalRadarPanel
+                strategyId={strategyId}
+                deploymentId={deploymentId}
+              />
+            </PanelErrorBoundary>
+          </div>
+        </>
+      )}
+    </aside>
+  )
+})
+
+// 右侧面板 - 使用 memo 防止不必要的重渲染
+interface RightPanelProps {
+  collapsed: boolean
+  deploymentId: string
+  onToggle: () => void
+}
+
+const RightPanel = memo(function RightPanel({
+  collapsed,
+  deploymentId,
+  onToggle,
+}: RightPanelProps) {
+  const width = collapsed ? 48 : 288
+
+  return (
+    <aside
+      className="flex-shrink-0 border-l border-gray-800 bg-[#12122a] transition-all duration-300 flex flex-col"
+      style={{ width }}
+    >
+      {collapsed ? (
+        <div className="flex-1 flex flex-col items-center pt-4 gap-4">
+          <Button
+            type="text"
+            icon={<ExpandOutlined />}
+            onClick={onToggle}
+            className="text-gray-400"
+          />
+        </div>
+      ) : (
+        <>
+          <div className="h-[55%] border-b border-gray-800 overflow-hidden">
+            <PanelErrorBoundary title="持仓监控">
+              <PositionMonitorPanel deploymentId={deploymentId} />
+            </PanelErrorBoundary>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <PanelErrorBoundary title="订单管理">
+              <OrderPanel deploymentId={deploymentId} />
+            </PanelErrorBoundary>
+          </div>
+        </>
+      )}
+    </aside>
+  )
+})
+
+// 图表工具栏 - 使用 memo
+interface ChartToolbarProps {
+  symbol: string
+  timeframe: TimeFrame
+  strategyName?: string
+  indicators: IndicatorConfig[]
+  onTimeframeChange: (tf: TimeFrame) => void
+  onIndicatorsChange: (indicators: IndicatorConfig[]) => void
+}
+
+const ChartToolbar = memo(function ChartToolbar({
+  symbol,
+  timeframe,
+  strategyName,
+  indicators,
+  onTimeframeChange,
+  onIndicatorsChange,
+}: ChartToolbarProps) {
+  return (
+    <div className="h-10 px-4 flex items-center justify-between border-b border-gray-800 bg-[#12122a] flex-shrink-0">
+      <div className="flex items-center gap-4">
+        <span className="text-white font-medium">{symbol}</span>
+        <TimeframeSelector
+          value={timeframe}
+          onChange={onTimeframeChange}
+          compact
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <IndicatorPanel
+          indicators={indicators}
+          onChange={onIndicatorsChange}
+        />
+        {strategyName && (
+          <span className="text-gray-500 text-xs">
+            策略: {strategyName}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+})
+
+// 主组件
+export default function Trading() {
+  // 布局状态
+  const [leftCollapsed, setLeftCollapsed] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(false)
+
+  // 环境状态
+  const [tradingEnv, setTradingEnv] = useState<TradingEnvironment>('paper')
+
+  // 图表状态
+  const [currentSymbol, setCurrentSymbol] = useState('NVDA')
+  const [timeframe, setTimeframe] = useState<TimeFrame>('15')
+  const [indicators, setIndicators] = useState<IndicatorConfig[]>(DEFAULT_INDICATORS)
+
+  // 部署数据
+  const [deployments, setDeployments] = useState<Deployment[]>([])
+  const [selectedDeployment, setSelectedDeployment] = useState<Deployment | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // 加载部署列表
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+
+    getDeployments({ status: 'running' })
+      .then(result => {
+        if (!mounted) return
+        setDeployments(result.items)
+        if (result.items.length > 0) {
+          setSelectedDeployment(result.items[0])
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
+
+    return () => { mounted = false }
+  }, [])
+
+  // 环境切换条件 (模拟数据)
+  const paperDays = 45
+  const winRate = 52.5
+
+  // 使用 useCallback 缓存回调函数
+  const handleEnvChange = useCallback(async (env: TradingEnvironment): Promise<boolean> => {
+    setTradingEnv(env)
+    return true
+  }, [])
+
+  const handleDeploymentSelect = useCallback((deployment: Deployment) => {
+    setSelectedDeployment(deployment)
+  }, [])
+
+  const handleLeftToggle = useCallback(() => {
+    setLeftCollapsed(prev => !prev)
+  }, [])
+
+  const handleRightToggle = useCallback(() => {
+    setRightCollapsed(prev => !prev)
+  }, [])
+
+  const handleTimeframeChange = useCallback((tf: TimeFrame) => {
+    setTimeframe(tf)
+  }, [])
+
+  const handleIndicatorsChange = useCallback((newIndicators: IndicatorConfig[]) => {
+    setIndicators(newIndicators)
+  }, [])
+
+  const handleSymbolChange = useCallback((symbol: string) => {
+    setCurrentSymbol(symbol)
+  }, [])
+
+  // 使用 useMemo 缓存计算值
+  const strategyId = useMemo(() => selectedDeployment?.strategyId || '', [selectedDeployment?.strategyId])
+  const deploymentId = useMemo(() => selectedDeployment?.deploymentId || '', [selectedDeployment?.deploymentId])
+  const selectedId = useMemo(() => selectedDeployment?.deploymentId, [selectedDeployment?.deploymentId])
+  const strategyName = useMemo(() => selectedDeployment?.strategyName, [selectedDeployment?.strategyName])
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#0a0a1a]">
+        <Spin size="large" tip="加载中..." />
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6 animate-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">交易执行</h1>
-        <div className="flex gap-2">
-          <Button icon={<SyncOutlined />}>同步持仓</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setOrderModalOpen(true)}>
-            新建订单
-          </Button>
+    <div className="h-screen flex flex-col bg-[#0a0a1a] overflow-hidden">
+      {/* 顶部工具栏 */}
+      <header className="h-12 px-4 flex items-center justify-between border-b border-gray-800 bg-[#12122a] flex-shrink-0">
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-bold text-white">实时交易监控</h1>
+
+          {/* 全局搜索框 */}
+          <Input
+            placeholder="搜索股票 (Ctrl+K)"
+            prefix={<SearchOutlined className="text-gray-500" />}
+            className="w-48 focus:w-64 transition-all"
+            size="small"
+            style={{
+              background: '#1a1a3a',
+              borderColor: '#3a3a5a',
+            }}
+          />
+
+          <EnvironmentSwitch
+            currentEnv={tradingEnv}
+            onEnvChange={handleEnvChange}
+            paperDays={paperDays}
+            winRate={winRate}
+          />
+          {selectedDeployment && (
+            <span className="text-gray-400 text-sm">
+              当前: <span className="text-white">{selectedDeployment.strategyName}</span>
+            </span>
+          )}
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="text"
+            icon={leftCollapsed ? <ExpandOutlined /> : <CompressOutlined />}
+            onClick={handleLeftToggle}
+            className="text-gray-400"
+          />
+          <Button
+            type="text"
+            icon={rightCollapsed ? <ExpandOutlined /> : <CompressOutlined />}
+            onClick={handleRightToggle}
+            className="text-gray-400"
+          />
+          <Button type="text" icon={<SettingOutlined />} className="text-gray-400" />
+        </div>
+      </header>
+
+      {/* 三栏主体 */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧面板 */}
+        <LeftPanel
+          collapsed={leftCollapsed}
+          deployments={deployments}
+          selectedId={selectedId}
+          onSelect={handleDeploymentSelect}
+          strategyId={strategyId}
+          deploymentId={deploymentId}
+          onToggle={handleLeftToggle}
+        />
+
+        {/* 中间: 图表区域 */}
+        <main className="flex-1 flex flex-col bg-[#0a0a1a] overflow-hidden">
+          {/* 图表工具栏 */}
+          <ChartToolbar
+            symbol={currentSymbol}
+            timeframe={timeframe}
+            strategyName={strategyName}
+            indicators={indicators}
+            onTimeframeChange={handleTimeframeChange}
+            onIndicatorsChange={handleIndicatorsChange}
+          />
+
+          {/* TradingView 图表 */}
+          <div className="flex-1 m-2 rounded-lg overflow-hidden bg-[#12122a]">
+            <PanelErrorBoundary title="图表">
+              <TradingViewChart
+                symbol={currentSymbol}
+                interval={timeframe}
+                theme="dark"
+                indicators={indicators}
+                onSymbolChange={handleSymbolChange}
+                onIntervalChange={handleTimeframeChange}
+              />
+            </PanelErrorBoundary>
+          </div>
+        </main>
+
+        {/* 右侧面板 */}
+        <RightPanel
+          collapsed={rightCollapsed}
+          deploymentId={deploymentId}
+          onToggle={handleRightToggle}
+        />
       </div>
-
-      {/* 账户概览 */}
-      <Row gutter={[16, 16]}>
-        <Col xs={12} md={6}>
-          <Card padding="md">
-            <div className="text-sm text-gray-500">账户净值</div>
-            <div className="text-2xl font-bold font-mono mt-1">$1,523,456.78</div>
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card padding="md">
-            <div className="text-sm text-gray-500">今日盈亏</div>
-            <NumberDisplay value={12345.67} type="currency" colorize showSign size="xl" className="mt-1" />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card padding="md">
-            <div className="text-sm text-gray-500">可用资金</div>
-            <div className="text-2xl font-bold font-mono mt-1">$325,432.10</div>
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card padding="md">
-            <div className="text-sm text-gray-500">持仓市值</div>
-            <div className="text-2xl font-bold font-mono mt-1">$1,198,024.68</div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* 持仓列表 */}
-      <Card title="当前持仓" subtitle="实时持仓明细">
-        <Table
-          dataSource={mockPositions}
-          columns={positionColumns}
-          rowKey="symbol"
-          pagination={false}
-        />
-      </Card>
-
-      {/* 订单管理 */}
-      <Card title="订单管理" subtitle="今日订单">
-        <Table
-          dataSource={mockOrders}
-          columns={orderColumns}
-          rowKey="id"
-          pagination={false}
-        />
-      </Card>
-
-      {/* 下单弹窗 */}
-      <Modal
-        title="新建订单"
-        open={orderModalOpen}
-        onOk={handleSubmitOrder}
-        onCancel={() => setOrderModalOpen(false)}
-        okText="提交订单"
-        cancelText="取消"
-      >
-        <Form form={form} layout="vertical" className="mt-4">
-          <Form.Item label="股票代码" name="symbol" rules={[{ required: true }]}>
-            <Input placeholder="输入股票代码" />
-          </Form.Item>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="方向" name="side" initialValue="BUY">
-                <Select>
-                  <Select.Option value="BUY">买入</Select.Option>
-                  <Select.Option value="SELL">卖出</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label="订单类型" name="type" initialValue="limit">
-                <Select>
-                  <Select.Option value="market">市价单</Select.Option>
-                  <Select.Option value="limit">限价单</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="数量" name="qty" rules={[{ required: true }]}>
-                <InputNumber min={1} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label="价格" name="price">
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} prefix="$" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
     </div>
   )
 }

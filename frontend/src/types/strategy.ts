@@ -591,3 +591,99 @@ export function createDefaultStrategyConfig(name: string = ''): Partial<Strategy
     monitor: DEFAULT_MONITOR_CONFIG,
   }
 }
+
+// ==================== 策略实体(用于CRUD操作) ====================
+
+/** 策略来源 */
+export type StrategySource = 'custom' | 'template' | 'imported'
+
+/** 回测结果摘要 */
+export interface BacktestSummary {
+  /** 回测ID */
+  backtestId: string
+  /** 年化收益率 */
+  annualReturn: number
+  /** 夏普比率 */
+  sharpeRatio: number
+  /** 最大回撤 */
+  maxDrawdown: number
+  /** 胜率 */
+  winRate: number
+  /** 回测时间范围 */
+  startDate: string
+  endDate: string
+  /** 回测完成时间 */
+  completedAt: string
+}
+
+/** 策略实体(存储于数据库) */
+export interface Strategy {
+  /** 策略唯一ID */
+  id: string
+  /** 策略名称 */
+  name: string
+  /** 策略描述 */
+  description: string
+  /** 策略状态 */
+  status: StrategyStatus
+  /** 策略来源 */
+  source: StrategySource
+  /** 来源模板ID(如果从模板创建) */
+  templateId?: string
+  /** 策略配置(7步) */
+  config: StrategyConfig
+  /** 最近回测结果 */
+  lastBacktest?: BacktestSummary
+  /** 关联的部署数量 */
+  deploymentCount: number
+  /** 创建者ID */
+  createdBy: string
+  /** 创建时间 */
+  createdAt: string
+  /** 更新时间 */
+  updatedAt: string
+  /** 标签 */
+  tags?: string[]
+  /** 是否收藏 */
+  isFavorite?: boolean
+}
+
+/** 策略列表响应 */
+export interface StrategyListResponse {
+  total: number
+  items: Strategy[]
+}
+
+/** 创建策略请求 */
+export interface StrategyCreateRequest {
+  name: string
+  description?: string
+  source?: StrategySource
+  templateId?: string
+  config: Partial<StrategyConfig>
+  tags?: string[]
+}
+
+/** 更新策略请求 */
+export interface StrategyUpdateRequest {
+  name?: string
+  description?: string
+  config?: Partial<StrategyConfig>
+  tags?: string[]
+  isFavorite?: boolean
+  status?: StrategyStatus
+  deploymentCount?: number
+}
+
+/** 策略筛选参数 */
+export interface StrategyFilterParams {
+  status?: StrategyStatus
+  source?: StrategySource
+  search?: string
+  tags?: string[]
+  isFavorite?: boolean
+  page?: number
+  pageSize?: number
+  sortBy?: 'name' | 'createdAt' | 'updatedAt' | 'lastBacktest'
+  sortOrder?: 'asc' | 'desc'
+}

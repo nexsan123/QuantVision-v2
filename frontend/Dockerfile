@@ -1,43 +1,57 @@
 # QuantVision Frontend - Production Dockerfile
-# Phase 14: 生产部署
+# Phase 3 Sprint 14: 生产部署准备
+#
+# 多阶段构建，使用 Nginx 作为静态服务器
 
-# Build stage
+# ==================== 构建阶段 ====================
 FROM node:20-alpine as builder
 
 WORKDIR /app
 
-# Install dependencies
+# 安装依赖 (利用缓存)
 COPY package*.json ./
-RUN npm ci --only=production=false
+RUN npm ci
 
-# Copy source code
+# 复制源代码
 COPY . .
 
-# Build arguments for environment
-ARG VITE_API_URL=/api/v1
+# 构建参数
+ARG VITE_API_BASE_URL=/api/v1
 ARG VITE_WS_URL=/ws
+ARG VITE_ALPACA_ENV=paper
 
-ENV VITE_API_URL=$VITE_API_URL \
-    VITE_WS_URL=$VITE_WS_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
+    VITE_WS_URL=$VITE_WS_URL \
+    VITE_ALPACA_ENV=$VITE_ALPACA_ENV
 
-# Build application
+# 构建应用
 RUN npm run build
 
-# Production stage with Nginx
+# ==================== 生产阶段 ====================
 FROM nginx:alpine as production
 
-# Copy custom nginx config
+# 安装 curl (健康检查)
+RUN apk add --no-cache curl
+
+# 复制 Nginx 配置
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Copy built assets
+# 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:80/health || exit 1
+# 创建非 root 用户运行
+RUN chown -R nginx:nginx /usr/share/nginx/html \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown -R nginx:nginx /var/log/nginx \
+    && touch /var/run/nginx.pid \
+    && chown -R nginx:nginx /var/run/nginx.pid
 
-# Expose port
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:80/ || exit 1
+
+# 暴露端口
 EXPOSE 80
 
-# Run nginx
+# 启动 Nginx
 CMD ["nginx", "-g", "daemon off;"]

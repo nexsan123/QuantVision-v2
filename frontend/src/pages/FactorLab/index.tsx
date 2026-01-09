@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Row, Col, Input, Select, Button, Table, Tag } from 'antd'
 import { PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { Card, NumberDisplay } from '@/components/ui'
-import { FactorICChart, GroupReturnChart } from '@/components/charts'
+import { FactorICChart, GroupReturnChart } from '@/components/Chart'
 
 const { TextArea } = Input
 

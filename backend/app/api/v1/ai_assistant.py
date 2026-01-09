@@ -536,3 +536,95 @@ async def get_all_steps():
             for i in range(7)
         ]
     }
+
+
+# ==================== AI 连接状态 (PRD 4.2) ====================
+
+from datetime import datetime
+from fastapi import BackgroundTasks
+import asyncio
+
+
+class AIConnectionStatus(BaseModel):
+    """AI连接状态"""
+    is_connected: bool
+    status: str  # 'connected' | 'connecting' | 'disconnected' | 'error'
+    model_name: str = "Claude 4.5 Sonnet"
+    last_heartbeat: Optional[datetime] = None
+    latency_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    can_reconnect: bool = True
+
+
+# 全局状态 (生产环境应使用Redis)
+_ai_status = AIConnectionStatus(
+    is_connected=True,
+    status="connected",
+    last_heartbeat=datetime.now(),
+    latency_ms=45
+)
+
+
+@router.get("/status", response_model=AIConnectionStatus, summary="获取AI连接状态")
+async def get_ai_status():
+    """
+    获取AI连接状态
+
+    返回:
+    - is_connected: 是否已连接
+    - status: 状态 (connected/connecting/disconnected/error)
+    - model_name: 模型名称
+    - latency_ms: 延迟毫秒数
+    """
+    return _ai_status
+
+
+@router.post("/reconnect", summary="重新连接AI")
+async def reconnect_ai(background_tasks: BackgroundTasks):
+    """
+    重新连接AI服务
+
+    返回:
+    - success: 是否成功发起重连
+    - message: 状态消息
+    """
+    global _ai_status
+
+    if not _ai_status.can_reconnect:
+        return {"success": False, "message": "当前无法重连，请稍后再试"}
+
+    # 设置为重连中状态
+    _ai_status.status = "connecting"
+    _ai_status.is_connected = False
+    _ai_status.can_reconnect = False
+
+    # 后台执行重连
+    background_tasks.add_task(_do_reconnect)
+
+    return {"success": True, "message": "正在重新连接..."}
+
+
+async def _do_reconnect():
+    """执行重连逻辑"""
+    global _ai_status
+    await asyncio.sleep(2)  # 模拟重连耗时
+
+    # 模拟重连成功
+    _ai_status.is_connected = True
+    _ai_status.status = "connected"
+    _ai_status.last_heartbeat = datetime.now()
+    _ai_status.latency_ms = 50
+    _ai_status.error_message = None
+    _ai_status.can_reconnect = True
+
+
+@router.get("/heartbeat", summary="心跳检测")
+async def heartbeat():
+    """
+    心跳检测
+
+    更新最后心跳时间，返回当前状态
+    """
+    global _ai_status
+    _ai_status.last_heartbeat = datetime.now()
+    return {"status": "ok", "timestamp": _ai_status.last_heartbeat}

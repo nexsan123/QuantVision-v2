@@ -42,15 +42,21 @@ def create_engine_instance() -> AsyncEngine:
     - 开发环境: 使用 NullPool 避免连接泄漏
     - 生产环境: 使用默认连接池，配置合理的 pool_size
     """
-    pool_class = NullPool if settings.DEBUG else None
+    # 开发环境使用 NullPool，不需要 pool_size/max_overflow
+    if settings.DEBUG:
+        return create_async_engine(
+            settings.DATABASE_URL,
+            echo=True,
+            poolclass=NullPool,
+        )
 
+    # 生产环境使用连接池
     return create_async_engine(
         settings.DATABASE_URL,
-        echo=settings.DEBUG,  # 开发环境打印 SQL
-        poolclass=pool_class,
-        pool_pre_ping=True,  # 连接健康检查
-        pool_size=10 if not settings.DEBUG else 5,
-        max_overflow=20 if not settings.DEBUG else 10,
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
     )
 
 

@@ -1,7 +1,7 @@
 import { Row, Col, Progress, Alert, Tag, Button, Table } from 'antd'
 import { WarningOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons'
 import { Card, NumberDisplay } from '@/components/ui'
-import { RiskRadarChart, PieChart } from '@/components/charts'
+import { RiskRadarChart, PieChart } from '@/components/Chart'
 
 // 模拟风险数据
 const mockRiskMetrics = {

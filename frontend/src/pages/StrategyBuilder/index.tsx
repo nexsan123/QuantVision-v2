@@ -12,12 +12,13 @@
  *
  * 支持双模式: 向导模式 / 工作流模式
  */
-import { useState, useCallback } from 'react'
-import { Button, message, Row, Col, Modal } from 'antd'
+import { useState, useCallback, useEffect } from 'react'
+import { Button, message, Modal, Input, Spin } from 'antd'
 import {
   SaveOutlined, PlayCircleOutlined, LeftOutlined, RightOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined, EditOutlined
 } from '@ant-design/icons'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Card } from '@/components/ui'
 import WizardSteps from '@/components/StrategyBuilder/WizardSteps'
 import ModeToggle from '@/components/StrategyBuilder/ModeToggle'
@@ -31,10 +32,27 @@ import {
   StrategyConfig, StepMeta, BuilderMode, STRATEGY_STEPS,
   createDefaultStrategyConfig,
   UniverseConfig, AlphaConfig, SignalConfig, RiskConfig,
-  PortfolioConfig, ExecutionConfig, MonitorConfig
+  PortfolioConfig, ExecutionConfig, MonitorConfig,
+  Strategy
 } from '@/types/strategy'
+import { createStrategy, updateStrategy, getStrategy } from '@/services/strategyService'
 
 export default function StrategyBuilder() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const strategyId = searchParams.get('id')
+
+  // 加载状态
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // 当前编辑的策略实体(如果是编辑现有策略)
+  const [existingStrategy, setExistingStrategy] = useState<Strategy | null>(null)
+
+  // 策略名称编辑
+  const [editingName, setEditingName] = useState(false)
+  const [tempName, setTempName] = useState('')
+
   // 模式状态
   const [mode, setMode] = useState<BuilderMode>('wizard')
 
@@ -43,7 +61,7 @@ export default function StrategyBuilder() {
 
   // 策略配置
   const [config, setConfig] = useState<Partial<StrategyConfig>>(
-    createDefaultStrategyConfig('我的第一个策略')
+    createDefaultStrategyConfig('我的新策略')
   )
 
   // 是否有未保存的更改
@@ -59,6 +77,29 @@ export default function StrategyBuilder() {
       status: index === 0 ? 'current' : 'pending',
     }))
   )
+
+  // 加载现有策略
+  useEffect(() => {
+    if (strategyId) {
+      setLoading(true)
+      getStrategy(strategyId)
+        .then(strategy => {
+          if (strategy) {
+            setExistingStrategy(strategy)
+            setConfig(strategy.config)
+          } else {
+            message.error('策略不存在')
+            navigate('/my-strategies')
+          }
+        })
+        .catch(() => {
+          message.error('加载策略失败')
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    }
+  }, [strategyId, navigate])
 
   // 更新配置的通用方法
   const updateConfig = useCallback(<K extends keyof StrategyConfig>(
@@ -95,38 +136,82 @@ export default function StrategyBuilder() {
     }
   }, [currentStep, goToStep])
 
+  // 更新策略名称
+  const handleNameSave = useCallback(() => {
+    if (tempName.trim()) {
+      setConfig(prev => ({ ...prev, name: tempName.trim() }))
+      setIsDirty(true)
+    }
+    setEditingName(false)
+  }, [tempName])
+
   // 保存策略
   const handleSave = useCallback(async () => {
-    try {
-      // 这里应该调用后端API保存策略
-      console.log('Saving strategy:', config)
-      message.success('策略已保存')
-      setIsDirty(false)
-    } catch (error) {
-      message.error('保存失败')
+    if (!config.name?.trim()) {
+      message.error('请输入策略名称')
+      return
     }
-  }, [config])
+
+    setSaving(true)
+    try {
+      if (existingStrategy) {
+        // 更新现有策略
+        await updateStrategy(existingStrategy.id, {
+          name: config.name,
+          description: config.description,
+          config: config as StrategyConfig,
+        })
+        message.success('策略已更新')
+      } else {
+        // 创建新策略
+        const newStrategy = await createStrategy({
+          name: config.name!,
+          description: config.description || '',
+          config: config as StrategyConfig,
+        })
+        setExistingStrategy(newStrategy)
+        // 更新URL以便刷新后能继续编辑
+        navigate(`/strategy?id=${newStrategy.id}`, { replace: true })
+        message.success('策略已保存')
+      }
+      setIsDirty(false)
+    } catch {
+      message.error('保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }, [config, existingStrategy, navigate])
 
   // 运行回测
-  const handleRunBacktest = useCallback(() => {
+  const handleRunBacktest = useCallback(async () => {
+    const goToBacktest = () => {
+      if (existingStrategy) {
+        navigate(`/backtest?strategyId=${existingStrategy.id}`)
+      } else {
+        message.warning('请先保存策略')
+      }
+    }
+
     if (isDirty) {
       Modal.confirm({
         title: '有未保存的更改',
         content: '是否先保存再运行回测？',
         okText: '保存并运行',
-        cancelText: '直接运行',
+        cancelText: '取消',
         onOk: async () => {
           await handleSave()
-          message.info('回测功能即将上线')
+          // 等待一下确保保存完成后再跳转
+          setTimeout(() => {
+            if (existingStrategy) {
+              navigate(`/backtest?strategyId=${existingStrategy.id}`)
+            }
+          }, 100)
         },
-        onCancel: () => {
-          message.info('回测功能即将上线')
-        }
       })
     } else {
-      message.info('回测功能即将上线')
+      goToBacktest()
     }
-  }, [isDirty, handleSave])
+  }, [isDirty, handleSave, existingStrategy, navigate])
 
   // 渲染当前步骤内容
   const renderStepContent = () => {
@@ -185,23 +270,57 @@ export default function StrategyBuilder() {
     }
   }
 
+  // 显示加载状态
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Spin size="large" tip="加载策略中..." />
+      </div>
+    )
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* 头部 */}
       <div className="flex justify-between items-center p-4 border-b border-dark-border">
         <div>
-          <h1 className="text-xl font-bold">策略构建器</h1>
-          <span className="text-gray-500 text-sm">
-            {config.name || '未命名策略'}
-            {isDirty && <span className="text-yellow-400 ml-2">*未保存</span>}
-          </span>
+          <h1 className="text-xl font-bold">
+            {existingStrategy ? '编辑策略' : '创建新策略'}
+          </h1>
+          <div className="flex items-center gap-2 mt-1">
+            {editingName ? (
+              <Input
+                value={tempName}
+                onChange={e => setTempName(e.target.value)}
+                onBlur={handleNameSave}
+                onPressEnter={handleNameSave}
+                autoFocus
+                size="small"
+                className="w-48"
+                placeholder="输入策略名称"
+              />
+            ) : (
+              <span
+                className="text-gray-400 text-sm cursor-pointer hover:text-white flex items-center gap-1"
+                onClick={() => {
+                  setTempName(config.name || '')
+                  setEditingName(true)
+                }}
+              >
+                {config.name || '点击输入策略名称'}
+                <EditOutlined className="text-xs" />
+              </span>
+            )}
+            {isDirty && <span className="text-yellow-400 text-xs">*未保存</span>}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <ModeToggle mode={mode} onChange={setMode} />
           <Button
             icon={<SaveOutlined />}
             onClick={handleSave}
-            disabled={!isDirty}
+            loading={saving}
+            disabled={!isDirty && !!existingStrategy}
           >
             保存
           </Button>
