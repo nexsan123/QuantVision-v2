@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Row, Col, Table, Tag, Button, Progress, Statistic, Alert, message, Modal
+  Row, Col, Table, Tag, Button, Progress, Statistic, message
 } from 'antd'
 import {
   CloudServerOutlined, SyncOutlined, CheckCircleOutlined,
@@ -46,7 +46,6 @@ export default function DataSourcePanel() {
   const [syncStatuses, setSyncStatuses] = useState<SyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([])
 
   const fetchSources = useCallback(async () => {
     try {
@@ -235,7 +234,7 @@ export default function DataSourcePanel() {
           <Button
             type="primary"
             icon={<SyncOutlined spin={syncing} />}
-            onClick={() => handleSync(['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'], 'day')}
+            onClick={() => handleSync(['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'], '1day')}
             loading={syncing}
           >
             {'\u540c\u6b65\u6837\u672c\u6570\u636e'}

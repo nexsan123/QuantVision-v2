@@ -60,7 +60,6 @@ export default function ReplayControlBar({
   const [symbolInput, setSymbolInput] = useState(state?.config.symbol || 'NVDA')
 
   const isPlaying = state?.status === 'playing'
-  const progress = state ? (state.currentBarIndex / state.totalBars) * 100 : 0
 
   return (
     <div className="bg-dark-card border-b border-gray-700 px-4 py-3">

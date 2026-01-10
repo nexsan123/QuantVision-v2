@@ -2,12 +2,11 @@
  * Step 3: 信号层配置组件 (新增)
  * 定义入场和出场的具体规则
  */
-import { useState } from 'react'
 import { Form, Select, InputNumber, Switch, Row, Col, Alert, Button, Table, Tag, Space } from 'antd'
 import { PlusOutlined, DeleteOutlined, InfoCircleOutlined, WarningOutlined } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {
-  SignalConfig, SignalRule, SignalType, RuleField, RuleOperator,
+  SignalConfig, SignalRule, RuleField, RuleOperator,
   DEFAULT_SIGNAL_CONFIG
 } from '@/types/strategy'
 

@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  Row, Col, Tag, Button, Switch, Statistic, Space, Alert, Tooltip, message
+  Row, Col, Tag, Switch, Statistic, Space, Alert, message
 } from 'antd'
 import {
   ApiOutlined, CheckCircleOutlined, CloseCircleOutlined,
@@ -17,8 +17,8 @@ import {
 } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {
-  BrokerType, BrokerConnectionStatus, BrokerAccount,
-  TradingMode, BROKER_LABELS
+  BrokerType, BrokerConnectionStatus,
+  BROKER_LABELS
 } from '@/types/trading'
 
 interface BrokerStatus {

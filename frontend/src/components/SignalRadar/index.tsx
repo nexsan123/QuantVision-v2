@@ -4,13 +4,12 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import { Card, Input, Select, Button, Badge, Spin, Empty, message } from 'antd'
-import { SearchOutlined, ReloadOutlined, FilterOutlined } from '@ant-design/icons'
+import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import SignalList from './SignalList'
 import {
   Signal,
   SignalType,
   SignalStrength,
-  SignalListResponse,
   SIGNAL_TYPE_CONFIG,
 } from '../../types/signalRadar'
 

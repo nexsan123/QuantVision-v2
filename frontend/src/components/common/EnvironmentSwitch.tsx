@@ -3,7 +3,7 @@
  * PRD 4.15.3: 模拟盘/实盘切换
  */
 import { useState } from 'react'
-import { Switch, Modal, Alert, message, Tooltip, Tag } from 'antd'
+import { Modal, Alert, message, Tooltip, Tag } from 'antd'
 import {
   ExperimentOutlined,
   DollarOutlined,

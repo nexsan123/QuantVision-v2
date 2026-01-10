@@ -456,20 +456,22 @@ export default function StrategyReplayPage() {
           onConfigChange={handleConfigChange}
         />
 
-        {/* 主内容区 */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* K线图区域 */}
-          <div className="flex-1 flex flex-col">
-            <div className="flex-1 relative">
+        {/* 主内容区 - 确保图表填满中间工作台 */}
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* K线图区域 - 填满剩余空间 */}
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className="flex-1 relative min-h-[400px]">
               <TradingViewChart
                 symbol={state?.config.symbol || 'NVDA'}
                 interval="5"
                 theme="dark"
+                autosize={true}
+                className="h-full"
               />
 
               {/* 回放进度覆盖层 */}
               {state && (
-                <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-2 rounded">
+                <div className="absolute bottom-4 left-4 z-20 bg-black/70 px-3 py-2 rounded">
                   <div className="text-purple-400 text-sm">
                     Bar {state.currentBarIndex + 1} / {state.totalBars}
                   </div>

@@ -257,7 +257,7 @@ export function useSingleQuote(
   symbol: string,
   options: Omit<UseRealTimeQuoteOptions, 'throttleMs'> = {}
 ): RealTimeQuote | null {
-  const { quotes, status } = useRealTimeQuote([symbol], options)
+  const { quotes, status: _status } = useRealTimeQuote([symbol], options)
   return quotes.get(symbol) || null
 }
 

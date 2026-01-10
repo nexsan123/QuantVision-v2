@@ -1,62 +1,60 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Row, Col, DatePicker, Select, Button, Table, Tabs, Progress, Modal, message } from 'antd'
 import { PlayCircleOutlined, DownloadOutlined, RocketOutlined, LineChartOutlined, ArrowLeftOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Card, NumberDisplay } from '@/components/ui'
 import { ReturnChart, HeatmapChart } from '@/components/Chart'
 import { getStrategies, getStrategy, updateBacktestResult, updateStrategy } from '@/services/strategyService'
+import {
+  createBacktest,
+  getBacktest,
+  getBacktestStatus,
+  getBacktestTrades,
+  type BacktestMetrics,
+  type BacktestTrade,
+} from '@/services/backtestService'
 import type { Strategy, BacktestSummary } from '@/types/strategy'
 import dayjs from 'dayjs'
 
 const { RangePicker } = DatePicker
 
-// 模拟回测结果
-const mockMetrics = {
-  totalReturn: 0.4523,
-  annualReturn: 0.1856,
-  sharpe: 1.92,
-  sortino: 2.45,
-  maxDrawdown: -0.1234,
-  winRate: 0.58,
-  profitFactor: 1.85,
-  calmar: 1.51,
+// 默认空指标 (回测完成前显示)
+const emptyMetrics: BacktestMetrics = {
+  totalReturn: 0,
+  annualReturn: 0,
+  sharpe: 0,
+  sortino: 0,
+  maxDrawdown: 0,
+  winRate: 0,
+  profitFactor: 0,
+  calmar: 0,
 }
 
-const mockReturnData = {
-  dates: ['2020-01', '2020-06', '2021-01', '2021-06', '2022-01', '2022-06', '2023-01', '2023-06', '2024-01', '2024-06'],
-  strategy: [0, 0.08, 0.15, 0.22, 0.18, 0.25, 0.32, 0.38, 0.42, 0.45],
-  benchmark: [0, 0.05, 0.10, 0.12, 0.08, 0.14, 0.18, 0.22, 0.26, 0.30],
+// 默认收益曲线数据
+const emptyReturnData = {
+  dates: [] as string[],
+  strategy: [] as number[],
+  benchmark: [] as number[],
 }
 
-const mockHeatmapData = {
-  years: ['2024', '2023', '2022', '2021', '2020'],
+// 默认热力图数据
+const emptyHeatmapData = {
+  years: [] as string[],
   months: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
-  values: [
-    [0.02, 0.03, -0.01, 0.04, 0.02, 0.01, 0, 0, 0, 0, 0, 0],
-    [0.03, -0.02, 0.04, 0.01, 0.03, -0.01, 0.02, 0.05, -0.02, 0.03, 0.02, 0.04],
-    [-0.05, 0.02, -0.03, 0.01, -0.02, 0.04, 0.02, -0.01, 0.03, -0.04, 0.02, 0.01],
-    [0.04, 0.03, 0.02, 0.05, 0.01, 0.03, 0.02, 0.04, -0.01, 0.02, 0.03, 0.05],
-    [-0.08, 0.06, 0.04, 0.08, 0.03, 0.02, 0.01, 0.03, -0.02, 0.04, 0.05, 0.03],
-  ],
+  values: [] as number[][],
 }
 
 const tradeColumns = [
-  { title: '日期', dataIndex: 'date', key: 'date' },
+  { title: '日期', dataIndex: 'timestamp', key: 'timestamp', render: (t: string) => t?.split('T')[0] || '-' },
   { title: '股票', dataIndex: 'symbol', key: 'symbol' },
   { title: '方向', dataIndex: 'side', key: 'side', render: (s: string) => (
-    <span className={s === 'BUY' ? 'text-profit' : 'text-loss'}>{s}</span>
+    <span className={s === 'buy' ? 'text-profit' : 'text-loss'}>{s?.toUpperCase()}</span>
   )},
-  { title: '数量', dataIndex: 'qty', key: 'qty', className: 'text-right font-mono' },
-  { title: '价格', dataIndex: 'price', key: 'price', className: 'text-right font-mono', render: (p: number) => `$${p}` },
-  { title: '盈亏', dataIndex: 'pnl', key: 'pnl', className: 'text-right', render: (v: number) => (
-    <NumberDisplay value={v} type="currency" colorize showSign />
+  { title: '数量', dataIndex: 'quantity', key: 'quantity', className: 'text-right font-mono' },
+  { title: '价格', dataIndex: 'price', key: 'price', className: 'text-right font-mono', render: (p: number) => `$${p?.toFixed(2) || '-'}` },
+  { title: '盈亏', dataIndex: 'pnl', key: 'pnl', className: 'text-right', render: (v: number | undefined) => (
+    v !== undefined ? <NumberDisplay value={v} type="currency" colorize showSign /> : '-'
   )},
-]
-
-const mockTrades = [
-  { key: 1, date: '2024-06-01', symbol: 'AAPL', side: 'BUY', qty: 100, price: 178.52, pnl: 1250 },
-  { key: 2, date: '2024-05-15', symbol: 'MSFT', side: 'SELL', qty: 50, price: 420.15, pnl: 850 },
-  { key: 3, date: '2024-05-01', symbol: 'GOOGL', side: 'BUY', qty: 30, price: 172.50, pnl: -320 },
 ]
 
 /**
@@ -90,6 +88,28 @@ export default function BacktestCenter() {
   const [progress, setProgress] = useState(0)
   const [backtestComplete, setBacktestComplete] = useState(false)
   const [showCompleteModal, setShowCompleteModal] = useState(false)
+  const [, setCurrentBacktestId] = useState<string | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 回测结果数据 (从API获取)
+  const [metrics, setMetrics] = useState<BacktestMetrics>(emptyMetrics)
+  // TODO: 后端需要提供收益曲线和热力图数据的 API
+  const [returnData, /* setReturnData */] = useState(emptyReturnData)
+  const [heatmapData, /* setHeatmapData */] = useState(emptyHeatmapData)
+  const [trades, setTrades] = useState<(BacktestTrade & { key: string })[]>([])
+  const [tradesLoading, setTradesLoading] = useState(false)
+
+  // 清理轮询
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => stopPolling()
+  }, [stopPolling])
 
   // 加载策略列表
   useEffect(() => {
@@ -130,8 +150,30 @@ export default function BacktestCenter() {
     setProgress(0)
   }
 
+  // 加载回测结果详情
+  const loadBacktestResult = useCallback(async (backtestId: string) => {
+    try {
+      // 获取回测详情 (含指标)
+      const result = await getBacktest(backtestId)
+      if (result.metrics) {
+        setMetrics(result.metrics)
+      }
+
+      // 获取交易记录
+      setTradesLoading(true)
+      const tradesResult = await getBacktestTrades(backtestId, { pageSize: 100 })
+      setTrades(tradesResult.trades.map((t, i) => ({ ...t, key: `${i}` })))
+      setTradesLoading(false)
+
+      // TODO: 后端需要提供收益曲线和月度热力图数据
+      // 暂时保持空数据，等待后端 API 扩展
+    } catch (err) {
+      console.error('加载回测结果失败:', err)
+    }
+  }, [])
+
   // 运行回测
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!selectedStrategy) {
       message.warning('请先选择策略')
       return
@@ -140,54 +182,82 @@ export default function BacktestCenter() {
     setRunning(true)
     setProgress(0)
     setBacktestComplete(false)
+    setMetrics(emptyMetrics)
+    setTrades([])
+    stopPolling()
 
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(timer)
-          setRunning(false)
-          setBacktestComplete(true)
+    try {
+      // 调用后端创建回测
+      const backtest = await createBacktest({
+        name: `${selectedStrategy.name} - ${dayjs().format('YYYY-MM-DD HH:mm')}`,
+        strategyId: selectedStrategy.id,
+        startDate: dateRange[0].format('YYYY-MM-DD'),
+        endDate: dateRange[1].format('YYYY-MM-DD'),
+        initialCapital: parseInt(initialCapital),
+      })
 
-          // 模拟保存回测结果
-          const backtestResult: BacktestSummary = {
-            backtestId: `bt-${Date.now()}`,
-            annualReturn: mockMetrics.annualReturn,
-            sharpeRatio: mockMetrics.sharpe,
-            maxDrawdown: mockMetrics.maxDrawdown,
-            winRate: mockMetrics.winRate,
-            startDate: dateRange[0].format('YYYY-MM-DD'),
-            endDate: dateRange[1].format('YYYY-MM-DD'),
-            completedAt: new Date().toISOString(),
-          }
+      setCurrentBacktestId(backtest.id)
 
-          if (selectedStrategy) {
+      // 轮询回测状态
+      pollingRef.current = setInterval(async () => {
+        try {
+          const status = await getBacktestStatus(backtest.id)
+          setProgress(status.progress)
+
+          if (status.status === 'completed') {
+            stopPolling()
+            setRunning(false)
+            setBacktestComplete(true)
+
+            // 加载完整回测结果
+            await loadBacktestResult(backtest.id)
+
+            // 获取最新指标更新策略
+            const finalResult = await getBacktest(backtest.id)
+            const backtestSummary: BacktestSummary = {
+              backtestId: backtest.id,
+              annualReturn: finalResult.metrics?.annualReturn || 0,
+              sharpeRatio: finalResult.metrics?.sharpe || 0,
+              maxDrawdown: finalResult.metrics?.maxDrawdown || 0,
+              winRate: finalResult.metrics?.winRate || 0,
+              startDate: dateRange[0].format('YYYY-MM-DD'),
+              endDate: dateRange[1].format('YYYY-MM-DD'),
+              completedAt: finalResult.completedAt || new Date().toISOString(),
+            }
+
             // 保存回测结果并更新策略状态
-            Promise.all([
-              updateBacktestResult(selectedStrategy.id, backtestResult),
-              // 如果策略是草稿状态，更新为已回测状态
+            await Promise.all([
+              updateBacktestResult(selectedStrategy.id, backtestSummary),
               selectedStrategy.status === 'draft'
                 ? updateStrategy(selectedStrategy.id, { status: 'backtest' })
                 : Promise.resolve(null),
             ])
-              .then(() => {
-                message.success('回测完成!')
-                // 更新本地状态
-                setSelectedStrategy(prev =>
-                  prev ? { ...prev, lastBacktest: backtestResult, status: prev.status === 'draft' ? 'backtest' : prev.status } : null
-                )
-                // 显示完成弹窗
-                setShowCompleteModal(true)
-              })
-              .catch(() => {
-                message.error('保存回测结果失败')
-              })
-          }
 
-          return 100
+            message.success('回测完成!')
+            setSelectedStrategy(prev =>
+              prev ? { ...prev, lastBacktest: backtestSummary, status: prev.status === 'draft' ? 'backtest' : prev.status } : null
+            )
+            setShowCompleteModal(true)
+
+          } else if (status.status === 'failed') {
+            stopPolling()
+            setRunning(false)
+            message.error('回测失败，请检查策略配置')
+          } else if (status.status === 'cancelled') {
+            stopPolling()
+            setRunning(false)
+            message.warning('回测已取消')
+          }
+        } catch (err) {
+          console.error('轮询回测状态失败:', err)
         }
-        return prev + 10
-      })
-    }, 200)
+      }, 1000) // 每秒轮询一次
+
+    } catch (err) {
+      setRunning(false)
+      message.error('启动回测失败，请稍后重试')
+      console.error('创建回测失败:', err)
+    }
   }
 
   // 处理部署策略
@@ -317,14 +387,14 @@ export default function BacktestCenter() {
       {/* 绩效指标 */}
       <Row gutter={[16, 16]}>
         {[
-          { label: '总收益', value: mockMetrics.totalReturn, type: 'percent' as const },
-          { label: '年化收益', value: mockMetrics.annualReturn, type: 'percent' as const },
-          { label: '夏普比率', value: mockMetrics.sharpe, type: 'ratio' as const },
-          { label: '索提诺', value: mockMetrics.sortino, type: 'ratio' as const },
-          { label: '最大回撤', value: mockMetrics.maxDrawdown, type: 'percent' as const },
-          { label: '胜率', value: mockMetrics.winRate, type: 'percent' as const },
-          { label: '盈亏比', value: mockMetrics.profitFactor, type: 'ratio' as const },
-          { label: 'Calmar', value: mockMetrics.calmar, type: 'ratio' as const },
+          { label: '总收益', value: metrics.totalReturn, type: 'percent' as const },
+          { label: '年化收益', value: metrics.annualReturn, type: 'percent' as const },
+          { label: '夏普比率', value: metrics.sharpe, type: 'ratio' as const },
+          { label: '索提诺', value: metrics.sortino, type: 'ratio' as const },
+          { label: '最大回撤', value: metrics.maxDrawdown, type: 'percent' as const },
+          { label: '胜率', value: metrics.winRate, type: 'percent' as const },
+          { label: '盈亏比', value: metrics.profitFactor, type: 'ratio' as const },
+          { label: 'Calmar', value: metrics.calmar, type: 'ratio' as const },
         ].map((m) => (
           <Col xs={12} sm={8} md={6} lg={3} key={m.label}>
             <Card padding="md" className="text-center">
@@ -344,7 +414,13 @@ export default function BacktestCenter() {
             label: '收益曲线',
             children: (
               <Card>
-                <ReturnChart data={mockReturnData} height={400} />
+                {returnData.dates.length > 0 ? (
+                  <ReturnChart data={returnData} height={400} />
+                ) : (
+                  <div className="h-[400px] flex items-center justify-center text-gray-500">
+                    {backtestComplete ? '收益曲线数据待后端API支持' : '运行回测后显示收益曲线'}
+                  </div>
+                )}
               </Card>
             ),
           },
@@ -353,7 +429,13 @@ export default function BacktestCenter() {
             label: '月度收益',
             children: (
               <Card>
-                <HeatmapChart data={mockHeatmapData} height={350} />
+                {heatmapData.years.length > 0 ? (
+                  <HeatmapChart data={heatmapData} height={350} />
+                ) : (
+                  <div className="h-[350px] flex items-center justify-center text-gray-500">
+                    {backtestComplete ? '热力图数据待后端API支持' : '运行回测后显示月度收益'}
+                  </div>
+                )}
               </Card>
             ),
           },
@@ -363,9 +445,11 @@ export default function BacktestCenter() {
             children: (
               <Card>
                 <Table
-                  dataSource={mockTrades}
+                  dataSource={trades}
                   columns={tradeColumns}
                   pagination={{ pageSize: 10 }}
+                  loading={tradesLoading}
+                  locale={{ emptyText: backtestComplete ? '暂无交易记录' : '运行回测后显示交易记录' }}
                 />
               </Card>
             ),
@@ -391,26 +475,26 @@ export default function BacktestCenter() {
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="text-center p-4 rounded-lg bg-gray-800">
               <div className="text-gray-400 text-sm">年化收益</div>
-              <div className={`text-2xl font-bold ${mockMetrics.annualReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {(mockMetrics.annualReturn * 100).toFixed(1)}%
+              <div className={`text-2xl font-bold ${metrics.annualReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {(metrics.annualReturn * 100).toFixed(1)}%
               </div>
             </div>
             <div className="text-center p-4 rounded-lg bg-gray-800">
               <div className="text-gray-400 text-sm">夏普比率</div>
               <div className="text-2xl font-bold text-blue-400">
-                {mockMetrics.sharpe.toFixed(2)}
+                {metrics.sharpe.toFixed(2)}
               </div>
             </div>
             <div className="text-center p-4 rounded-lg bg-gray-800">
               <div className="text-gray-400 text-sm">最大回撤</div>
               <div className="text-2xl font-bold text-yellow-400">
-                {(mockMetrics.maxDrawdown * 100).toFixed(1)}%
+                {(metrics.maxDrawdown * 100).toFixed(1)}%
               </div>
             </div>
             <div className="text-center p-4 rounded-lg bg-gray-800">
               <div className="text-gray-400 text-sm">胜率</div>
               <div className="text-2xl font-bold text-purple-400">
-                {(mockMetrics.winRate * 100).toFixed(0)}%
+                {(metrics.winRate * 100).toFixed(0)}%
               </div>
             </div>
           </div>

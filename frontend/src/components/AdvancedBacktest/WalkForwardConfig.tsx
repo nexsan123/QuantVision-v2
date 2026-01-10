@@ -5,16 +5,15 @@
 import { useState, useEffect } from 'react'
 import {
   Form, InputNumber, Select, Switch, Button, Alert, Row, Col,
-  Slider, Tooltip, Spin, message, Statistic
+  Tooltip, Spin, message, Statistic
 } from 'antd'
 import {
   InfoCircleOutlined, PlayCircleOutlined, SettingOutlined,
-  ExperimentOutlined, CheckCircleOutlined
+  ExperimentOutlined
 } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {
-  WalkForwardConfig, WalkForwardResult, DEFAULT_WALK_FORWARD_CONFIG,
-  ASSESSMENT_COLORS
+  WalkForwardConfig, WalkForwardResult, DEFAULT_WALK_FORWARD_CONFIG
 } from '@/types/backtest'
 
 const { Option } = Select
@@ -29,7 +28,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 export default function WalkForwardConfigComponent({
   strategyId,
-  onRunValidation,
+  onRunValidation: _onRunValidation,
   onResult
 }: WalkForwardConfigProps) {
   const [config, setConfig] = useState<WalkForwardConfig>(DEFAULT_WALK_FORWARD_CONFIG)

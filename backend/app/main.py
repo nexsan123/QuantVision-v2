@@ -37,24 +37,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 启动
     logger.info("应用启动中...", version=settings.APP_VERSION)
 
+    db_connected = False
+    redis_connected = False
+
     try:
-        # 初始化数据库
+        # 初始化数据库 (可选，失败不阻止启动)
         if settings.DEBUG:
-            await init_db()
-            logger.info("数据库初始化完成")
+            try:
+                await init_db()
+                db_connected = True
+                logger.info("数据库初始化完成")
+            except Exception as e:
+                logger.warning("数据库连接失败，部分功能不可用", error=str(e))
 
-        # 初始化 Redis
-        await RedisClient.connect()
-        logger.info("Redis 连接成功")
+        # 初始化 Redis (可选，失败不阻止启动)
+        try:
+            await RedisClient.connect()
+            redis_connected = True
+            logger.info("Redis 连接成功")
+        except Exception as e:
+            logger.warning("Redis 连接失败，缓存功能不可用", error=str(e))
 
-        logger.info("应用启动完成", environment=settings.ENVIRONMENT)
+        logger.info("应用启动完成", environment=settings.ENVIRONMENT, db=db_connected, redis=redis_connected)
         yield
 
     finally:
         # 关闭
         logger.info("应用关闭中...")
-        await close_db()
-        await RedisClient.disconnect()
+        try:
+            await close_db()
+        except Exception:
+            pass
+        try:
+            await RedisClient.disconnect()
+        except Exception:
+            pass
         logger.info("应用已关闭")
 
 
@@ -102,7 +119,7 @@ def register_routes(app: FastAPI) -> None:
     所有 v1 版本的路由都挂载在 /api/v1 前缀下
     WebSocket 路由挂载在根路径
     """
-    from app.api.v1 import ai_assistant, advanced_backtest, alerts, attribution, backtests, conflict, deployment, drift, execution, factor_validation, factors, health, logs, metrics, notifications, manual_trade, market_data, pdt, positions, pre_market, realtime, replay, risk, risk_advanced, signal_radar, strategy, strategy_v2, templates, trade_attribution, trading, trading_cost, validation
+    from app.api.v1 import ai_assistant, advanced_backtest, alerts, attribution, auth, backtests, conflict, deployment, drift, execution, factor_validation, factors, health, logs, metrics, notifications, manual_trade, market_data, pdt, positions, pre_market, realtime, replay, risk, risk_advanced, signal_radar, strategy, strategy_v2, templates, trade_attribution, trading, trading_cost, validation
     from app.websocket import trading_router, alpaca_router
 
     # WebSocket 路由 (根路径)
@@ -121,6 +138,12 @@ def register_routes(app: FastAPI) -> None:
         health.router,
         prefix=settings.API_V1_PREFIX,
         tags=["健康检查"],
+    )
+    # Phase 3: 认证与授权 API
+    app.include_router(
+        auth.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["认证"],
     )
     app.include_router(
         factors.router,

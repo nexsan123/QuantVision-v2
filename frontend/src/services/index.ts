@@ -4,7 +4,7 @@
  */
 
 // Sprint 7: Polygon 行情服务
-export { polygonWebSocket } from './polygonWebSocket'
+export { getPolygonWebSocket, PolygonWebSocketService } from './polygonWebSocket'
 export { polygonApi } from './polygonApi'
 export { preMarketService } from './preMarketService'
 

@@ -15,8 +15,8 @@ import type {
   BacktestSummary,
 } from '../types/strategy'
 
-// 是否使用 Mock 数据
-const USE_MOCK = true
+// 是否使用 Mock 数据 (设置为 false 连接真实后端 API)
+const USE_MOCK = false
 
 // ==================== 默认策略数据 ====================
 
@@ -292,7 +292,7 @@ export async function getStrategies(params: StrategyFilterParams = {}): Promise<
   if (USE_MOCK) {
     return mockGetStrategies(params)
   }
-  return apiGet<StrategyListResponse>('/api/v1/strategies', params as Record<string, string | number | boolean | undefined>)
+  return apiGet<StrategyListResponse>('/api/v1/strategies/v2/', params as Record<string, string | number | boolean | undefined>)
 }
 
 /**
@@ -302,7 +302,7 @@ export async function getStrategy(id: string): Promise<Strategy | null> {
   if (USE_MOCK) {
     return mockGetStrategy(id)
   }
-  return apiGet<Strategy>(`/api/v1/strategies/${id}`)
+  return apiGet<Strategy>(`/api/v1/strategies/v2/${id}`)
 }
 
 /**
@@ -312,7 +312,7 @@ export async function createStrategy(data: StrategyCreateRequest): Promise<Strat
   if (USE_MOCK) {
     return mockCreateStrategy(data)
   }
-  return apiPost<Strategy>('/api/v1/strategies', data)
+  return apiPost<Strategy>('/api/v1/strategies/v2/', data)
 }
 
 /**
@@ -322,7 +322,7 @@ export async function updateStrategy(id: string, data: StrategyUpdateRequest): P
   if (USE_MOCK) {
     return mockUpdateStrategy(id, data)
   }
-  return apiPut<Strategy>(`/api/v1/strategies/${id}`, data)
+  return apiPut<Strategy>(`/api/v1/strategies/v2/${id}`, data)
 }
 
 /**
@@ -332,7 +332,7 @@ export async function deleteStrategy(id: string): Promise<void> {
   if (USE_MOCK) {
     return mockDeleteStrategy(id)
   }
-  return apiDelete(`/api/v1/strategies/${id}`)
+  return apiDelete(`/api/v1/strategies/v2/${id}`)
 }
 
 /**
@@ -353,7 +353,7 @@ export async function updateBacktestResult(id: string, result: BacktestSummary):
   if (USE_MOCK) {
     return mockUpdateBacktestResult(id, result)
   }
-  return apiPost<Strategy>(`/api/v1/strategies/${id}/backtest-result`, result)
+  return apiPost<Strategy>(`/api/v1/strategies/v2/${id}/backtest-result`, result)
 }
 
 /**

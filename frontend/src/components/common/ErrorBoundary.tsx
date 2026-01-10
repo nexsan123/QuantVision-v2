@@ -233,7 +233,7 @@ export function RouteErrorBoundary({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary
       showDetails={process.env.NODE_ENV === 'development'}
-      onError={(error, errorInfo) => {
+      onError={(error, _errorInfo) => {
         // 可以上报到错误监控服务
         console.error('[RouteError]', error.message)
       }}

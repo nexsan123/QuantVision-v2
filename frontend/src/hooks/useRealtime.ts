@@ -5,7 +5,7 @@
  * 提供后端实时数据的 React Hooks
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { realtimeApi, type RealtimeStatus, type PositionDetail, type OrderDetail } from '../services/backendApi'
 import { backendWebSocket, type WebSocketEvent, type ConnectionStatus } from '../services/backendWebSocket'
 
@@ -167,8 +167,25 @@ export function useRealtimePositions(options: UseRealtimePositionsOptions = {}):
   useEffect(() => {
     const unsubscribe = backendWebSocket.onEvent((event) => {
       if (event.type === 'positions_snapshot') {
-        const snapshot = event as { positions: PositionDetail[] }
-        setPositions(snapshot.positions)
+        // 将 WebSocket 的持仓数据映射到 PositionDetail 类型
+        const snapshot = event as { positions: Array<{
+          symbol: string
+          side: 'long' | 'short'
+          quantity: number
+          avg_entry_price: number
+          current_price: number
+          market_value: number
+          unrealized_pnl: number
+          unrealized_pnl_pct: number
+          weight_pct: number
+        }> }
+        // 转换为 PositionDetail 格式
+        const mappedPositions: PositionDetail[] = snapshot.positions.map(p => ({
+          ...p,
+          cost_basis: p.avg_entry_price * p.quantity,
+          exchange: 'NASDAQ'  // 默认交易所
+        }))
+        setPositions(mappedPositions)
       }
     })
 

@@ -8,7 +8,7 @@
  * - 内容占位符
  */
 
-import React, { ReactNode } from 'react'
+import { ReactNode } from 'react'
 import { Skeleton, Spin, Card, Space, Progress } from 'antd'
 import { LoadingOutlined } from '@ant-design/icons'
 

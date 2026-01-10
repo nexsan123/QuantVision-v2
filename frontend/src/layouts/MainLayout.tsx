@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Layout, Menu } from 'antd'
 import {
@@ -38,14 +38,113 @@ export default function MainLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  // AI 连接状态 (模拟数据)
+  // AI 连接状态
   const [aiStatus, setAiStatus] = useState<AIConnectionStatus>({
-    isConnected: true,
-    status: 'connected',
+    isConnected: false,
+    status: 'connecting',
     modelName: 'Claude 4.5 Sonnet',
-    latencyMs: 120,
+    latencyMs: undefined,
     canReconnect: true,
   })
+
+  // API 基础URL
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
+  // 检查 AI 连接状态
+  const checkAIConnection = useCallback(async () => {
+    // 检查网络状态
+    if (!navigator.onLine) {
+      setAiStatus(prev => ({
+        ...prev,
+        isConnected: false,
+        status: 'offline',
+        latencyMs: undefined,
+      }))
+      return
+    }
+
+    setAiStatus(prev => ({ ...prev, status: 'connecting' }))
+
+    try {
+      const startTime = Date.now()
+      const response = await fetch(`${API_BASE_URL}/api/v1/ai/health`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      })
+
+      const latencyMs = Date.now() - startTime
+
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}))
+        setAiStatus({
+          isConnected: true,
+          status: 'connected',
+          modelName: data.model || 'Claude 4.5 Sonnet',
+          latencyMs,
+          lastHeartbeat: new Date().toISOString(),
+          canReconnect: true,
+        })
+      } else {
+        setAiStatus(prev => ({
+          ...prev,
+          isConnected: false,
+          status: 'error',
+          errorMessage: `API Error: ${response.status}`,
+          canReconnect: true,
+        }))
+      }
+    } catch (error) {
+      // 连接失败时使用模拟连接状态 (开发模式)
+      if (import.meta.env.DEV) {
+        setAiStatus({
+          isConnected: true,
+          status: 'connected',
+          modelName: 'Claude 4.5 Sonnet (Dev)',
+          latencyMs: Math.floor(Math.random() * 150) + 50,
+          lastHeartbeat: new Date().toISOString(),
+          canReconnect: true,
+        })
+      } else {
+        setAiStatus(prev => ({
+          ...prev,
+          isConnected: false,
+          status: 'disconnected',
+          errorMessage: error instanceof Error ? error.message : '连接失败',
+          canReconnect: true,
+        }))
+      }
+    }
+  }, [API_BASE_URL])
+
+  // 初始化和定期检查 AI 连接
+  useEffect(() => {
+    // 初始检查
+    checkAIConnection()
+
+    // 每30秒检查一次
+    const interval = setInterval(checkAIConnection, 30000)
+
+    // 监听网络状态变化
+    const handleOnline = () => checkAIConnection()
+    const handleOffline = () => {
+      setAiStatus(prev => ({
+        ...prev,
+        isConnected: false,
+        status: 'offline',
+        latencyMs: undefined,
+      }))
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [checkAIConnection])
 
   // 预警数据 (模拟数据)
   const [alerts, setAlerts] = useState<RiskAlert[]>([
@@ -77,14 +176,7 @@ export default function MainLayout() {
 
   // 处理重连
   const handleReconnect = async () => {
-    setAiStatus((prev) => ({ ...prev, status: 'connecting', isConnected: false }))
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setAiStatus((prev) => ({
-      ...prev,
-      status: 'connected',
-      isConnected: true,
-      latencyMs: Math.floor(Math.random() * 200) + 50,
-    }))
+    await checkAIConnection()
   }
 
   // 标记已读

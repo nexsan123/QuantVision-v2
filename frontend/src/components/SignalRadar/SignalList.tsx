@@ -3,7 +3,7 @@
  * PRD 4.16.2
  */
 import { useState } from 'react'
-import { Collapse, Tag, Button, Tooltip, Progress } from 'antd'
+import { Tag, Button, Tooltip, Progress } from 'antd'
 import {
   ShoppingCartOutlined,
   InfoCircleOutlined,
@@ -33,10 +33,6 @@ export default function SignalList({
   onQuickOrder,
 }: SignalListProps) {
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
-
-  const handleExpand = (keys: string | string[]) => {
-    setExpandedKeys(Array.isArray(keys) ? keys : [keys])
-  }
 
   const renderFactorProgress = (factor: FactorTrigger) => {
     const pct = Math.min(100, factor.nearTriggerPct)

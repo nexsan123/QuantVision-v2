@@ -9,10 +9,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Row, Col, Progress, Tag, Alert, Badge, Statistic, Tooltip } from 'antd'
+import { Row, Col, Progress, Tag, Alert, Statistic } from 'antd'
 import {
   WarningOutlined, AlertOutlined, DashboardOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, SyncOutlined
+  ArrowDownOutlined, SyncOutlined
 } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {

@@ -1,13 +1,15 @@
 import { ReactNode } from 'react'
 
 interface CardProps {
-  title?: string
-  subtitle?: string
+  title?: ReactNode      // 支持 string 或 JSX 元素
+  subtitle?: ReactNode   // 支持 string 或 JSX 元素
   extra?: ReactNode
   children: ReactNode
   className?: string
   hoverable?: boolean
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  size?: 'small' | 'default'  // 兼容 antd Card 的 size 属性
+  style?: React.CSSProperties  // 支持内联样式
 }
 
 const paddingStyles = {
@@ -30,15 +32,20 @@ export function Card({
   className = '',
   hoverable = false,
   padding = 'lg',
+  size = 'default',
+  style,
 }: CardProps) {
+  // size 属性影响 padding
+  const actualPadding = size === 'small' ? 'sm' : padding
   return (
     <div
       className={`
         bg-dark-card border border-dark-border rounded-xl
         ${hoverable ? 'hover:bg-dark-hover hover:border-gray-700 transition-colors cursor-pointer' : ''}
-        ${paddingStyles[padding]}
+        ${paddingStyles[actualPadding]}
         ${className}
       `}
+      style={style}
     >
       {(title || extra) && (
         <div className="flex items-center justify-between mb-4">

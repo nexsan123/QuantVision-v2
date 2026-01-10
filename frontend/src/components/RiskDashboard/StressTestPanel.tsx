@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import {
   Row, Col, Button, Table, Tag, Alert, Spin, Modal, Descriptions,
-  Tooltip, Progress, message
+  Tooltip, message
 } from 'antd'
 import {
   ThunderboltOutlined, ExperimentOutlined, WarningOutlined,

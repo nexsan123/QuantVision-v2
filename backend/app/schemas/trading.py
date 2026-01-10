@@ -390,3 +390,55 @@ class CancelOrderResponse(BaseModel):
     success: bool
     order_id: str
     error: str | None = None
+
+
+# ============ 对账报告模型 ============
+
+class SyncStatusEnum(str, Enum):
+    """同步状态"""
+    SYNCED = "synced"
+    DRIFTED = "drifted"
+    LOCAL_ONLY = "local_only"
+    REMOTE_ONLY = "remote_only"
+    QUANTITY_MISMATCH = "qty_mismatch"
+
+
+class PositionDiffSchema(BaseModel):
+    """持仓差异"""
+    symbol: str
+    status: SyncStatusEnum
+    local_quantity: float | None = None
+    remote_quantity: float | None = None
+    quantity_diff: float = 0.0
+    local_avg_price: float | None = None
+    remote_avg_price: float | None = None
+    price_diff: float = 0.0
+
+
+class ReconciliationReport(BaseModel):
+    """对账报告"""
+    report_id: str
+    timestamp: datetime
+    broker: BrokerType
+    is_synced: bool
+    total_positions: int = 0
+    synced_count: int = 0
+    drifted_count: int = 0
+    local_only_count: int = 0
+    remote_only_count: int = 0
+    diffs: list[PositionDiffSchema] = []
+
+    # 汇总信息
+    local_total_value: float = 0.0
+    remote_total_value: float = 0.0
+    value_diff: float = 0.0
+
+    # 建议操作
+    suggested_actions: list[str] = []
+
+
+class ReconciliationResponse(BaseModel):
+    """对账响应"""
+    success: bool
+    report: ReconciliationReport | None = None
+    error: str | None = None

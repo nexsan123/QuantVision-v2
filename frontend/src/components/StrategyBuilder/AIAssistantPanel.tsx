@@ -6,10 +6,9 @@ import { useState, useRef, useEffect } from 'react'
 import { Input, Button, Spin, Tag, Collapse } from 'antd'
 import {
   RobotOutlined, SendOutlined, BulbOutlined,
-  QuestionCircleOutlined, ReloadOutlined
+  QuestionCircleOutlined
 } from '@ant-design/icons'
-import { Card } from '@/components/ui'
-import { AIMessage, AIMessageRole, STRATEGY_STEPS, StrategyConfig } from '@/types/strategy'
+import { AIMessage, STRATEGY_STEPS, StrategyConfig } from '@/types/strategy'
 
 const { TextArea } = Input
 
@@ -122,7 +121,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 export default function AIAssistantPanel({
   currentStep,
   config,
-  onApplyConfig
+  onApplyConfig: _onApplyConfig
 }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<AIMessage[]>([])
   const [inputValue, setInputValue] = useState('')

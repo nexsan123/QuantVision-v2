@@ -5,9 +5,7 @@
 import { Modal, Tag, Button, Radio, Space, Alert, Divider, Tooltip } from 'antd'
 import {
   WarningOutlined,
-  ThunderboltOutlined,
   ClockCircleOutlined,
-  SwapOutlined,
 } from '@ant-design/icons'
 import { useState } from 'react'
 import {

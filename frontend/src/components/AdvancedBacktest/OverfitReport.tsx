@@ -2,17 +2,16 @@
  * 过拟合检测报告组件
  * Phase 9: 回测引擎升级
  */
-import { useState } from 'react'
 import {
-  Row, Col, Progress, Tag, Collapse, Tooltip, Statistic, List, Alert
+  Row, Col, Progress, Tag, Tooltip, Statistic, Alert
 } from 'antd'
 import {
-  WarningOutlined, CheckCircleOutlined, InfoCircleOutlined,
+  WarningOutlined, InfoCircleOutlined,
   LineChartOutlined, ExperimentOutlined, SafetyOutlined
 } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {
-  OverfitDetectionResult, ParameterSensitivity,
+  OverfitDetectionResult,
   OVERFIT_RISK_COLORS
 } from '@/types/backtest'
 

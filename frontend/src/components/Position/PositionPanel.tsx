@@ -7,10 +7,7 @@ import { Button, Modal, InputNumber, Tooltip, Tag, Divider, message } from 'antd
 import {
   SwapOutlined,
   WarningOutlined,
-  DollarOutlined,
   StockOutlined,
-  RiseOutlined,
-  FallOutlined,
 } from '@ant-design/icons'
 import {
   AccountPositionSummary,
@@ -33,7 +30,7 @@ interface PositionPanelProps {
 export default function PositionPanel({
   summary,
   onSellPosition,
-  loading = false,
+  loading: _loading = false,
 }: PositionPanelProps) {
   const [viewMode, setViewMode] = useState<PositionViewMode>('strategy')
   const [sellModalVisible, setSellModalVisible] = useState(false)
@@ -375,7 +372,7 @@ function SymbolView({ positions }: { positions: ConsolidatedPosition[] }) {
                   className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-800/30"
                 >
                   <div className="flex items-center gap-2">
-                    <Tag size="small" color={source.strategy_id ? 'blue' : 'default'}>
+                    <Tag className="text-xs" color={source.strategy_id ? 'blue' : 'default'}>
                       {source.strategy_name}
                     </Tag>
                     <span className="text-gray-400 text-sm">{source.quantity}股</span>

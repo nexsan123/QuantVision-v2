@@ -14,8 +14,8 @@ import type {
   DeploymentEnvironment,
 } from '../types/deployment'
 
-// 是否使用 Mock 数据
-const USE_MOCK = true
+// 是否使用 Mock 数据 (设置为 false 连接真实后端 API)
+const USE_MOCK = false
 
 // ==================== 默认部署数据 ====================
 

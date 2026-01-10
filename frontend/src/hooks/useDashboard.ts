@@ -10,7 +10,7 @@
  */
 
 import { useQuery, useQueries } from '@tanstack/react-query'
-import { realtimeApi, PositionDetail, OrderDetail } from '@/services/backendApi'
+import { realtimeApi } from '@/services/backendApi'
 
 // ==================== 类型定义 ====================
 

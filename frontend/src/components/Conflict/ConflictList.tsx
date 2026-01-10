@@ -25,7 +25,7 @@ interface ConflictListProps {
 export default function ConflictList({
   conflicts,
   onSelect,
-  loading = false,
+  loading: _loading = false,
 }: ConflictListProps) {
   if (conflicts.length === 0) {
     return (

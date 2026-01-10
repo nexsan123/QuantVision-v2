@@ -4,7 +4,7 @@
  */
 
 // AI 状态类型
-export type AIStatusType = 'connected' | 'connecting' | 'disconnected' | 'error';
+export type AIStatusType = 'connected' | 'connecting' | 'disconnected' | 'error' | 'offline';
 
 // AI 连接状态
 export interface AIConnectionStatus {
@@ -47,6 +47,12 @@ export const AI_STATUS_CONFIG: Record<AIStatusType, {
     text: '连接错误',
     color: '#ef4444',
     bgColor: 'bg-red-500/20',
+  },
+  offline: {
+    icon: '⚪',
+    text: '离线模式',
+    color: '#6b7280',
+    bgColor: 'bg-gray-500/20',
   },
 };
 

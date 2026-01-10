@@ -55,8 +55,6 @@ export default function RiskDecompositionChart({ data }: RiskDecompositionChartP
       .sort((a, b) => Math.abs(b.exposure) - Math.abs(a.exposure))
   }, [data.factorExposures.industry, data.industryRiskDetails])
 
-  const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`
-
   const getExposureColor = (exposure: number) => {
     if (exposure > 0.3) return '#52c41a'
     if (exposure < -0.3) return '#ff4d4f'

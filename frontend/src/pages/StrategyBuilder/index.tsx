@@ -19,7 +19,6 @@ import {
   CheckCircleOutlined, EditOutlined
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Card } from '@/components/ui'
 import WizardSteps from '@/components/StrategyBuilder/WizardSteps'
 import ModeToggle from '@/components/StrategyBuilder/ModeToggle'
 import AIAssistantPanel from '@/components/StrategyBuilder/AIAssistantPanel'
@@ -31,8 +30,6 @@ import WorkflowCanvas from '@/components/Workflow/WorkflowCanvas'
 import {
   StrategyConfig, StepMeta, BuilderMode, STRATEGY_STEPS,
   createDefaultStrategyConfig,
-  UniverseConfig, AlphaConfig, SignalConfig, RiskConfig,
-  PortfolioConfig, ExecutionConfig, MonitorConfig,
   Strategy
 } from '@/types/strategy'
 import { createStrategy, updateStrategy, getStrategy } from '@/services/strategyService'
@@ -68,7 +65,7 @@ export default function StrategyBuilder() {
   const [isDirty, setIsDirty] = useState(false)
 
   // AI助手面板展开状态
-  const [aiPanelExpanded, setAiPanelExpanded] = useState(true)
+  const [aiPanelExpanded, _setAiPanelExpanded] = useState(true)
 
   // 步骤元数据（包含状态）
   const [steps, setSteps] = useState<StepMeta[]>(

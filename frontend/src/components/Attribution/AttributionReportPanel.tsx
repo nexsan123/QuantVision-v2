@@ -2,7 +2,7 @@
  * 归因报告面板组件
  * PRD 4.5 交易归因系统
  */
-import { Progress, Tag, Tooltip, Statistic, Row, Col } from 'antd'
+import { Progress, Tag, Tooltip, Row, Col } from 'antd'
 import {
   TrophyOutlined,
   RiseOutlined,

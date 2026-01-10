@@ -5,7 +5,8 @@
  */
 
 export { default as EnvironmentSwitch } from './EnvironmentSwitch'
-export { ConnectionStatus, ConnectionStatusIcon } from './ConnectionStatus'
+// ConnectionStatus 已移至 Trading 目录
+// export { ConnectionStatus, ConnectionStatusIcon } from '@/components/Trading'
 export {
   ErrorBoundary,
   withErrorBoundary,

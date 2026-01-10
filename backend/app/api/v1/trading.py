@@ -12,8 +12,12 @@ Phase 12: \u6267\u884c\u5c42\u5347\u7ea7 - \u4ea4\u6613 API
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
+
+from app.core.database import get_db
+from app.models.audit_log import log_audit_event
 
 from app.schemas.trading import (
     BrokerType,
@@ -39,8 +43,14 @@ from app.schemas.trading import (
     CancelOrderResponse,
     TradingStats,
     MarketStatus,
+    ReconciliationReport,
+    ReconciliationResponse,
+    SyncStatusEnum,
+    PositionDiffSchema,
 )
 from app.services.broker_service import broker_manager, BrokerType as BT
+from app.services.position_sync import PositionSyncService, SyncStatus
+from app.models.audit_log import AuditActionType
 from app.services.slippage_model import (
     SlippageModelFactory,
     estimate_slippage,
@@ -207,7 +217,10 @@ async def get_positions() -> PositionsResponse:
 # ============ \u8ba2\u5355\u7ba1\u7406 ============
 
 @router.post("/orders", response_model=SubmitOrderResponse)
-async def submit_order(request: CreateOrderRequest) -> SubmitOrderResponse:
+async def submit_order(
+    request: CreateOrderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SubmitOrderResponse:
     """
     \u63d0\u4ea4\u8ba2\u5355
 
@@ -229,7 +242,37 @@ async def submit_order(request: CreateOrderRequest) -> SubmitOrderResponse:
     # \u63d0\u4ea4\u8ba2\u5355
     order = await broker.submit_order(request)
     if not order:
+        # 记录失败的审计日志
+        await log_audit_event(
+            db,
+            action=AuditActionType.ORDER_SUBMIT,
+            resource_type="order",
+            new_value={
+                "symbol": request.symbol,
+                "side": request.side.value,
+                "quantity": request.quantity,
+                "order_type": request.order_type.value,
+            },
+            status="failure",
+            error_message="订单提交失败",
+        )
         return SubmitOrderResponse(success=False, error="\u8ba2\u5355\u63d0\u4ea4\u5931\u8d25")
+
+    # 记录成功的审计日志
+    await log_audit_event(
+        db,
+        action=AuditActionType.ORDER_SUBMIT,
+        resource_type="order",
+        resource_id=order.id,
+        new_value={
+            "symbol": request.symbol,
+            "side": request.side.value,
+            "quantity": request.quantity,
+            "order_type": request.order_type.value,
+            "order_id": order.id,
+        },
+        status="success",
+    )
 
     logger.info(
         "\u8ba2\u5355\u5df2\u63d0\u4ea4",
@@ -286,7 +329,10 @@ async def get_order(order_id: str) -> OrderResponse:
 
 
 @router.delete("/orders/{order_id}", response_model=CancelOrderResponse)
-async def cancel_order(order_id: str) -> CancelOrderResponse:
+async def cancel_order(
+    order_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> CancelOrderResponse:
     """
     \u53d6\u6d88\u8ba2\u5355
     """
@@ -300,11 +346,29 @@ async def cancel_order(order_id: str) -> CancelOrderResponse:
 
     success = await broker.cancel_order(order_id)
     if not success:
+        # 记录取消失败的审计日志
+        await log_audit_event(
+            db,
+            action=AuditActionType.ORDER_CANCEL,
+            resource_type="order",
+            resource_id=order_id,
+            status="failure",
+            error_message="订单取消失败",
+        )
         return CancelOrderResponse(
             success=False,
             order_id=order_id,
             error="\u53d6\u6d88\u5931\u8d25",
         )
+
+    # 记录取消成功的审计日志
+    await log_audit_event(
+        db,
+        action=AuditActionType.ORDER_CANCEL,
+        resource_type="order",
+        resource_id=order_id,
+        status="success",
+    )
 
     logger.info("\u8ba2\u5355\u5df2\u53d6\u6d88", order_id=order_id)
 
@@ -482,3 +546,113 @@ async def get_trading_stats() -> TradingStats:
         largest_win=largest_win,
         largest_loss=largest_loss,
     )
+
+
+# ============ 对账报告 ============
+
+@router.get("/reconciliation", response_model=ReconciliationResponse)
+async def get_reconciliation_report() -> ReconciliationResponse:
+    """
+    生成对账报告
+
+    比较本地持仓与券商持仓，返回差异报告
+    用于合规审计和风险管理
+    """
+    from uuid import uuid4
+
+    broker = broker_manager.primary_broker
+    if not broker:
+        return ReconciliationResponse(success=False, error="未连接券商")
+
+    try:
+        # 获取券商持仓
+        remote_positions = await broker.get_positions()
+        remote_total = sum(p.market_value for p in remote_positions)
+
+        # 创建同步服务并检查
+        sync_service = PositionSyncService()
+        sync_result = await sync_service.check_sync()
+
+        # 转换差异为 schema
+        diffs = []
+        for diff in sync_result.diffs:
+            diffs.append(PositionDiffSchema(
+                symbol=diff.symbol,
+                status=SyncStatusEnum(diff.status.value),
+                local_quantity=float(diff.local_quantity) if diff.local_quantity else None,
+                remote_quantity=float(diff.remote_quantity) if diff.remote_quantity else None,
+                quantity_diff=float(diff.quantity_diff),
+                local_avg_price=float(diff.local_avg_price) if diff.local_avg_price else None,
+                remote_avg_price=float(diff.remote_avg_price) if diff.remote_avg_price else None,
+                price_diff=float(diff.price_diff),
+            ))
+
+        # 生成建议操作
+        suggested_actions = []
+        for diff in sync_result.diffs:
+            if diff.status == SyncStatus.LOCAL_ONLY:
+                suggested_actions.append(f"清除本地仓位 {diff.symbol} (券商无持仓)")
+            elif diff.status == SyncStatus.REMOTE_ONLY:
+                suggested_actions.append(f"同步远端仓位 {diff.symbol} 到本地")
+            elif diff.status == SyncStatus.QUANTITY_MISMATCH:
+                suggested_actions.append(f"调整 {diff.symbol} 数量差异: {diff.quantity_diff}")
+
+        report = ReconciliationReport(
+            report_id=str(uuid4()),
+            timestamp=datetime.now(),
+            broker=BrokerType(broker.broker_type.value),
+            is_synced=sync_result.is_synced,
+            total_positions=sync_result.total_positions,
+            synced_count=sync_result.synced_count,
+            drifted_count=sync_result.drifted_count,
+            local_only_count=sync_result.local_only_count,
+            remote_only_count=sync_result.remote_only_count,
+            diffs=diffs,
+            remote_total_value=remote_total,
+            suggested_actions=suggested_actions,
+        )
+
+        logger.info(
+            "对账报告已生成",
+            report_id=report.report_id,
+            is_synced=report.is_synced,
+            total_positions=report.total_positions,
+        )
+
+        return ReconciliationResponse(success=True, report=report)
+
+    except Exception as e:
+        logger.error("对账报告生成失败", error=str(e))
+        return ReconciliationResponse(success=False, error=str(e))
+
+
+@router.post("/reconciliation/sync")
+async def sync_positions() -> dict[str, Any]:
+    """
+    同步持仓
+
+    将券商持仓同步到本地
+    """
+    broker = broker_manager.primary_broker
+    if not broker:
+        raise HTTPException(status_code=400, detail="未连接券商")
+
+    try:
+        sync_service = PositionSyncService()
+        result = await sync_service.sync_to_local()
+
+        logger.info(
+            "持仓同步完成",
+            is_synced=result.is_synced,
+            total_positions=result.total_positions,
+        )
+
+        return {
+            "success": True,
+            "message": f"已同步 {result.total_positions} 个持仓",
+            "is_synced": result.is_synced,
+        }
+
+    except Exception as e:
+        logger.error("持仓同步失败", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

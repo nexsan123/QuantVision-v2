@@ -7,7 +7,7 @@ import { Form, Select, Tag, Row, Col, Alert, Button, InputNumber, Empty } from '
 import { DeleteOutlined, InfoCircleOutlined, RobotOutlined } from '@ant-design/icons'
 import { Card } from '@/components/ui'
 import {
-  AlphaConfig, FactorSelection, CombineMethod, NormalizeType, NeutralizeType,
+  AlphaConfig, FactorSelection,
   FactorCategory, DEFAULT_ALPHA_CONFIG
 } from '@/types/strategy'
 

@@ -219,35 +219,38 @@ export default function IntradayTradingPage({
           />
         </div>
 
-        {/* 中间: 双TradingView图表 (1min + 5min) */}
-        <div className="flex-1 flex flex-col border-l border-r border-gray-700">
-          {/* 上半部: 5分钟图 (主图) */}
-          <div className="flex-1 relative border-b border-gray-700">
-            <div className="absolute top-2 left-2 z-10 bg-gray-900/80 px-2 py-1 rounded text-xs text-gray-400">
-              5min
+        {/* 中间: 双TradingView图表 (1min + 5min) - 填满工作台 */}
+        <div className="flex-1 flex flex-col border-l border-r border-gray-700 min-w-0">
+          {/* 上半部: 5分钟图 (主图) - 使用 flex-[2] 占据更多空间 */}
+          <div className="flex-[2] relative border-b border-gray-700 min-h-[300px]">
+            <div className="absolute top-2 left-2 z-20 bg-gray-900/80 px-2 py-1 rounded text-xs text-gray-400">
+              5min 主图
             </div>
             <TradingViewChart
               symbol={currentSymbol}
               interval="5"
               theme="dark"
+              autosize={true}
+              className="h-full"
             />
           </div>
 
-          {/* 下半部: 1分钟图 (细节) */}
-          <div className="h-[200px] relative">
-            <div className="absolute top-2 left-2 z-10 bg-gray-900/80 px-2 py-1 rounded text-xs text-gray-400">
-              1min
+          {/* 下半部: 1分钟图 (细节) - 固定高度 */}
+          <div className="flex-1 relative min-h-[180px] max-h-[220px]">
+            <div className="absolute top-2 left-2 z-20 bg-gray-900/80 px-2 py-1 rounded text-xs text-gray-400">
+              1min 细节
             </div>
             <TradingViewChart
               symbol={currentSymbol}
               interval="1"
               theme="dark"
-              height={200}
+              autosize={true}
+              className="h-full"
             />
           </div>
 
-          {/* 快速交易面板 */}
-          <div className="h-[140px] border-t border-gray-700">
+          {/* 快速交易面板 - 固定高度 */}
+          <div className="h-[130px] flex-shrink-0 border-t border-gray-700">
             <QuickTradePanel
               symbol={currentSymbol}
               price={522.3}

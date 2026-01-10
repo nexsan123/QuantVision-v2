@@ -2,7 +2,7 @@
  * 预警通知铃铛组件
  * PRD 4.14
  */
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Badge, Dropdown, Empty, Spin, Button } from 'antd'
 import { BellOutlined, CheckOutlined } from '@ant-design/icons'
 import {

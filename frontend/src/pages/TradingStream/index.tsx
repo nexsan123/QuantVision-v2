@@ -1,7 +1,8 @@
 /**
  * 实时交易流页面
+ * PRD 4.16 实时交易监控界面
  *
- * 显示实时交易事件、价格行情和账户状态
+ * v2.1 更新: 添加 TradingView 图表到中间工作台
  */
 
 import { useState, useCallback, useMemo } from 'react'
@@ -27,6 +28,7 @@ import {
   DollarOutlined,
   StockOutlined,
   BellOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons'
 
 import { useTradingStream } from '@/hooks/useTradingStream'
@@ -37,6 +39,7 @@ import {
   PriceGrid,
 } from '@/components/Trading'
 import { TradingEventType } from '@/types/trading'
+import TradingViewChart from '@/components/Chart/TradingViewChart'
 
 import './TradingStream.css'
 
@@ -68,9 +71,20 @@ export function TradingStream() {
   // 本地状态
   const [eventFilter, setEventFilter] = useState<TradingEventType | 'all'>('all')
   const [symbolFilter, setSymbolFilter] = useState<string>('')
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('NVDA')  // 当前查看的股票
 
   // 是否已连接
   const isConnected = state.connectionStatus === 'connected'
+
+  // 股票选项列表
+  const symbolOptions = [
+    { value: 'NVDA', label: 'NVDA - NVIDIA' },
+    { value: 'AAPL', label: 'AAPL - Apple' },
+    { value: 'TSLA', label: 'TSLA - Tesla' },
+    { value: 'MSFT', label: 'MSFT - Microsoft' },
+    { value: 'GOOGL', label: 'GOOGL - Alphabet' },
+    { value: 'AMZN', label: 'AMZN - Amazon' },
+  ]
 
   // 筛选后的事件
   const filteredEvents = useMemo(() => {
@@ -206,10 +220,10 @@ export function TradingStream() {
         </Card>
       )}
 
-      {/* 主内容区 */}
-      <div className="grid grid-cols-3 gap-6">
+      {/* 主内容区 - 三栏布局 */}
+      <div className="flex gap-4" style={{ height: 'calc(100vh - 280px)' }}>
         {/* 左侧：事件流 */}
-        <div className="col-span-2">
+        <div className="w-[360px] flex-shrink-0">
           <Card
             title={
               <Space>
@@ -220,40 +234,24 @@ export function TradingStream() {
             }
             extra={
               <Space>
-                {/* 事件类型筛选 */}
                 <Select
                   value={eventFilter}
                   onChange={setEventFilter}
                   options={eventTypeFilters}
-                  style={{ width: 140 }}
-                  size="small"
-                />
-
-                {/* 股票筛选 */}
-                <Input
-                  placeholder="筛选股票"
-                  prefix={<FilterOutlined />}
-                  value={symbolFilter}
-                  onChange={(e) => setSymbolFilter(e.target.value)}
                   style={{ width: 120 }}
                   size="small"
-                  allowClear
                 />
-
-                {/* 清空事件 */}
                 <Button
                   type="text"
                   icon={<DeleteOutlined />}
                   onClick={clearEvents}
                   size="small"
                   disabled={state.events.length === 0}
-                >
-                  清空
-                </Button>
+                />
               </Space>
             }
-            className="bg-dark-card border-dark-border"
-            bodyStyle={{ padding: 0, maxHeight: 600, overflow: 'auto' }}
+            className="bg-dark-card border-dark-border h-full"
+            bodyStyle={{ padding: 0, height: 'calc(100% - 57px)', overflow: 'auto' }}
           >
             {filteredEvents.length > 0 ? (
               <List
@@ -266,19 +264,57 @@ export function TradingStream() {
               />
             ) : (
               <Empty
-                description={
-                  isConnected
-                    ? '等待交易事件...'
-                    : '连接后显示实时事件'
-                }
+                description={isConnected ? '等待交易事件...' : '连接后显示实时事件'}
                 className="py-12"
               />
             )}
           </Card>
         </div>
 
+        {/* 中间：TradingView 图表 - 填满工作台 */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <Card
+            title={
+              <Space>
+                <LineChartOutlined />
+                <span>实时图表</span>
+                <Select
+                  value={selectedSymbol}
+                  onChange={setSelectedSymbol}
+                  options={symbolOptions}
+                  style={{ width: 160 }}
+                  size="small"
+                />
+              </Space>
+            }
+            extra={
+              <Input
+                placeholder="筛选股票"
+                prefix={<FilterOutlined />}
+                value={symbolFilter}
+                onChange={(e) => setSymbolFilter(e.target.value)}
+                style={{ width: 120 }}
+                size="small"
+                allowClear
+              />
+            }
+            className="bg-dark-card border-dark-border h-full flex flex-col"
+            bodyStyle={{ flex: 1, padding: 0, minHeight: 0 }}
+          >
+            <div className="h-full">
+              <TradingViewChart
+                symbol={selectedSymbol}
+                interval="5"
+                theme="dark"
+                autosize={true}
+                className="h-full"
+              />
+            </div>
+          </Card>
+        </div>
+
         {/* 右侧：价格和持仓 */}
-        <div className="space-y-6">
+        <div className="w-[300px] flex-shrink-0 flex flex-col gap-4">
           {/* 实时行情 */}
           <Card
             title={
@@ -288,9 +324,10 @@ export function TradingStream() {
               </Space>
             }
             className="bg-dark-card border-dark-border"
+            size="small"
           >
             {prices.size > 0 ? (
-              <PriceGrid prices={prices} maxItems={8} />
+              <PriceGrid prices={prices} maxItems={6} />
             ) : (
               <Empty description="暂无行情数据" />
             )}
@@ -305,16 +342,19 @@ export function TradingStream() {
                 <Badge count={positions.length} showZero color="#1890ff" />
               </Space>
             }
-            className="bg-dark-card border-dark-border"
+            className="bg-dark-card border-dark-border flex-1"
+            size="small"
+            bodyStyle={{ maxHeight: 300, overflow: 'auto' }}
           >
             {positions.length > 0 ? (
               <List
                 dataSource={positions}
+                size="small"
                 renderItem={(pos) => (
-                  <List.Item className="!border-dark-border">
+                  <List.Item className="!border-dark-border !py-2">
                     <div className="flex items-center justify-between w-full">
                       <div>
-                        <div className="font-medium text-gray-200">
+                        <div className="font-medium text-gray-200 text-sm">
                           {pos.symbol}
                         </div>
                         <div className="text-xs text-gray-500">
@@ -323,20 +363,15 @@ export function TradingStream() {
                       </div>
                       <div className="text-right">
                         <div
-                          className={`font-medium ${
-                            pos.unrealizedPnl >= 0
-                              ? 'text-green-400'
-                              : 'text-red-400'
+                          className={`font-medium text-sm ${
+                            pos.unrealizedPnl >= 0 ? 'text-green-400' : 'text-red-400'
                           }`}
                         >
-                          {pos.unrealizedPnl >= 0 ? '+' : ''}$
-                          {pos.unrealizedPnl.toFixed(2)}
+                          {pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}
                         </div>
                         <div
                           className={`text-xs ${
-                            pos.unrealizedPnlPercent >= 0
-                              ? 'text-green-400'
-                              : 'text-red-400'
+                            pos.unrealizedPnlPercent >= 0 ? 'text-green-400' : 'text-red-400'
                           }`}
                         >
                           {pos.unrealizedPnlPercent >= 0 ? '+' : ''}

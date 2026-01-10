@@ -1,32 +1,53 @@
-import { Row, Col, Progress, Alert, Tag, Button, Table } from 'antd'
-import { WarningOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons'
+import { useState, useEffect, useCallback } from 'react'
+import { Row, Col, Progress, Alert, Tag, Button, Table, message, Spin } from 'antd'
+import { WarningOutlined, CheckCircleOutlined, SyncOutlined, LoadingOutlined } from '@ant-design/icons'
 import { Card, NumberDisplay } from '@/components/ui'
 import { RiskRadarChart, PieChart } from '@/components/Chart'
+import {
+  getCircuitBreakerStatus,
+  getRiskAlerts,
+  getRiskScore,
+  getRiskMonitorStatus,
+  type CircuitBreakerStatus,
+  type RiskAlert,
+} from '@/services/riskService'
 
-// 模拟风险数据
-const mockRiskMetrics = {
-  var95: -45678.90,
-  var99: -68234.56,
-  cvar: -78901.23,
-  volatility: 0.182,
-  beta: 1.15,
-  maxDrawdown: -0.0856,
-  currentDrawdown: -0.0234,
-  sharpe: 1.85,
+// 默认风险指标 (未加载时显示)
+const defaultRiskMetrics = {
+  var95: 0,
+  var99: 0,
+  cvar: 0,
+  volatility: 0,
+  beta: 1.0,
+  maxDrawdown: 0,
+  currentDrawdown: 0,
+  sharpe: 0,
 }
 
-const mockCircuitBreaker = {
-  state: 'CLOSED',
-  dailyPnL: -8500,
-  consecutiveLosses: 2,
+// 默认熔断器状态
+const defaultCircuitBreaker: CircuitBreakerStatus & {
   triggers: {
-    drawdown: { limit: 0.10, current: 0.0234 },
-    dailyLoss: { limit: 0.03, current: 0.0056 },
-    volatility: { limit: 0.30, current: 0.182 },
+    drawdown: { limit: number; current: number }
+    dailyLoss: { limit: number; current: number }
+    volatility: { limit: number; current: number }
+  }
+} = {
+  state: 'CLOSED',
+  isTripped: false,
+  canTrade: true,
+  triggerReason: null,
+  triggeredAt: null,
+  consecutiveLosses: 0,
+  dailyPnl: 0,
+  triggers: {
+    drawdown: { limit: 0.10, current: 0 },
+    dailyLoss: { limit: 0.03, current: 0 },
+    volatility: { limit: 0.30, current: 0 },
   },
 }
 
-const mockFactorExposure = {
+// 默认因子暴露 (这部分可能需要后端提供专门 API)
+const defaultFactorExposure = {
   indicators: [
     { name: '市场', max: 2 },
     { name: '规模', max: 2 },
@@ -35,21 +56,12 @@ const mockFactorExposure = {
     { name: '质量', max: 2 },
     { name: '波动', max: 2 },
   ],
-  values: [1.15, 0.45, 0.82, 1.25, 0.68, -0.35],
+  values: [0, 0, 0, 0, 0, 0],
 }
 
-const mockSectorExposure = [
-  { name: '科技', value: 32.5 },
-  { name: '医疗', value: 18.2 },
-  { name: '金融', value: 15.8 },
-  { name: '消费', value: 12.4 },
-  { name: '工业', value: 10.6 },
-  { name: '其他', value: 10.5 },
-]
-
-const mockAlerts = [
-  { id: 1, level: 'warning', message: '组合波动率接近阈值', time: '15:30:00', metric: '波动率', value: 0.182 },
-  { id: 2, level: 'info', message: '今日已触发2次止损', time: '14:22:15', metric: '止损次数', value: 2 },
+// 默认行业暴露 (这部分可能需要后端提供专门 API)
+const defaultSectorExposure = [
+  { name: '暂无数据', value: 100 },
 ]
 
 /**
@@ -62,52 +74,142 @@ const mockAlerts = [
  * - 风险警报
  */
 export default function RiskCenter() {
+  // 加载状态
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // 风险数据状态
+  const [riskMetrics, setRiskMetrics] = useState(defaultRiskMetrics)
+  const [circuitBreaker, setCircuitBreaker] = useState(defaultCircuitBreaker)
+  const [alerts, setAlerts] = useState<RiskAlert[]>([])
+  // TODO: 因子暴露和行业暴露需要后端额外 API 支持
+  const [factorExposure, /* setFactorExposure */] = useState(defaultFactorExposure)
+  const [sectorExposure, /* setSectorExposure */] = useState(defaultSectorExposure)
+
+  // 加载数据
+  const loadData = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true)
+    else setLoading(true)
+
+    try {
+      // 并行请求多个 API
+      const [cbStatus, alertsData, scoreData, monitorStatus] = await Promise.all([
+        getCircuitBreakerStatus().catch(() => null),
+        getRiskAlerts({ sinceHours: 24 }).catch(() => []),
+        getRiskScore().catch(() => null),
+        getRiskMonitorStatus().catch(() => null),
+      ])
+
+      // 更新熔断器状态
+      if (cbStatus) {
+        setCircuitBreaker(prev => ({
+          ...prev,
+          ...cbStatus,
+        }))
+      }
+
+      // 更新警报
+      setAlerts(alertsData)
+
+      // 更新风险指标 (从 score 和 monitor 中提取)
+      if (scoreData && monitorStatus) {
+        setRiskMetrics(prev => ({
+          ...prev,
+          currentDrawdown: scoreData.currentDrawdown,
+          volatility: monitorStatus.currentVolatility,
+        }))
+
+        // 更新熔断器触发器当前值
+        setCircuitBreaker(prev => ({
+          ...prev,
+          triggers: {
+            ...prev.triggers,
+            drawdown: { ...prev.triggers.drawdown, current: Math.abs(scoreData.currentDrawdown) },
+            volatility: { ...prev.triggers.volatility, current: monitorStatus.currentVolatility },
+          },
+        }))
+      }
+
+      // TODO: 因子暴露和行业暴露需要后端额外 API 支持
+      // 目前保持默认值
+
+    } catch (err) {
+      console.error('加载风险数据失败:', err)
+      message.error('加载风险数据失败')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
+
+  // 初始加载
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  // 处理刷新
+  const handleRefresh = () => {
+    loadData(true)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Spin indicator={<LoadingOutlined style={{ fontSize: 48 }} spin />} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 animate-in">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">风险中心</h1>
-        <Button icon={<SyncOutlined />}>刷新数据</Button>
+        <Button icon={<SyncOutlined spin={refreshing} />} onClick={handleRefresh} loading={refreshing}>
+          刷新数据
+        </Button>
       </div>
 
       {/* 风险警报 */}
-      {mockAlerts.map((alert) => (
+      {alerts.length > 0 ? alerts.map((alert, index) => (
         <Alert
-          key={alert.id}
-          type={alert.level as 'warning' | 'info'}
+          key={index}
+          type={alert.level === 'critical' || alert.level === 'emergency' ? 'error' : alert.level}
           message={
             <div className="flex justify-between items-center">
               <span>{alert.message}</span>
-              <span className="text-gray-500 text-sm">{alert.time}</span>
+              <span className="text-gray-500 text-sm">{alert.timestamp?.split('T')[1]?.substring(0, 8) || ''}</span>
             </div>
           }
           showIcon
         />
-      ))}
+      )) : (
+        <Alert type="success" message="暂无风险警报" showIcon />
+      )}
 
       {/* 风险指标 */}
       <Row gutter={[16, 16]}>
         <Col xs={12} md={6}>
           <Card padding="md">
             <div className="text-sm text-gray-500">VaR (95%)</div>
-            <NumberDisplay value={mockRiskMetrics.var95} type="currency" colorize size="xl" className="mt-1" />
+            <NumberDisplay value={riskMetrics.var95} type="currency" colorize size="xl" className="mt-1" />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card padding="md">
             <div className="text-sm text-gray-500">VaR (99%)</div>
-            <NumberDisplay value={mockRiskMetrics.var99} type="currency" colorize size="xl" className="mt-1" />
+            <NumberDisplay value={riskMetrics.var99} type="currency" colorize size="xl" className="mt-1" />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card padding="md">
             <div className="text-sm text-gray-500">CVaR</div>
-            <NumberDisplay value={mockRiskMetrics.cvar} type="currency" colorize size="xl" className="mt-1" />
+            <NumberDisplay value={riskMetrics.cvar} type="currency" colorize size="xl" className="mt-1" />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card padding="md">
             <div className="text-sm text-gray-500">波动率 (年化)</div>
-            <NumberDisplay value={mockRiskMetrics.volatility} type="percent" size="xl" className="mt-1" />
+            <NumberDisplay value={riskMetrics.volatility} type="percent" size="xl" className="mt-1" />
           </Card>
         </Col>
       </Row>
@@ -116,10 +218,10 @@ export default function RiskCenter() {
         {/* 熔断器状态 */}
         <Col xs={24} lg={12}>
           <Card title="熔断器状态" extra={
-            <Tag color={mockCircuitBreaker.state === 'CLOSED' ? 'green' : 'red'} icon={
-              mockCircuitBreaker.state === 'CLOSED' ? <CheckCircleOutlined /> : <WarningOutlined />
+            <Tag color={circuitBreaker.state === 'CLOSED' ? 'green' : 'red'} icon={
+              circuitBreaker.state === 'CLOSED' ? <CheckCircleOutlined /> : <WarningOutlined />
             }>
-              {mockCircuitBreaker.state === 'CLOSED' ? '正常交易' : '熔断中'}
+              {circuitBreaker.state === 'CLOSED' ? '正常交易' : '熔断中'}
             </Tag>
           }>
             <div className="space-y-4">
@@ -127,48 +229,48 @@ export default function RiskCenter() {
                 <div className="flex justify-between mb-1">
                   <span className="text-gray-400">回撤</span>
                   <span className="font-mono">
-                    {(mockCircuitBreaker.triggers.drawdown.current * 100).toFixed(2)}% / {(mockCircuitBreaker.triggers.drawdown.limit * 100).toFixed(0)}%
+                    {(circuitBreaker.triggers.drawdown.current * 100).toFixed(2)}% / {(circuitBreaker.triggers.drawdown.limit * 100).toFixed(0)}%
                   </span>
                 </div>
                 <Progress
-                  percent={(mockCircuitBreaker.triggers.drawdown.current / mockCircuitBreaker.triggers.drawdown.limit) * 100}
+                  percent={circuitBreaker.triggers.drawdown.limit > 0 ? (circuitBreaker.triggers.drawdown.current / circuitBreaker.triggers.drawdown.limit) * 100 : 0}
                   showInfo={false}
-                  strokeColor={mockCircuitBreaker.triggers.drawdown.current > mockCircuitBreaker.triggers.drawdown.limit * 0.8 ? '#ef4444' : '#3b82f6'}
+                  strokeColor={circuitBreaker.triggers.drawdown.current > circuitBreaker.triggers.drawdown.limit * 0.8 ? '#ef4444' : '#3b82f6'}
                 />
               </div>
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-gray-400">日亏损</span>
                   <span className="font-mono">
-                    {(mockCircuitBreaker.triggers.dailyLoss.current * 100).toFixed(2)}% / {(mockCircuitBreaker.triggers.dailyLoss.limit * 100).toFixed(0)}%
+                    {(circuitBreaker.triggers.dailyLoss.current * 100).toFixed(2)}% / {(circuitBreaker.triggers.dailyLoss.limit * 100).toFixed(0)}%
                   </span>
                 </div>
                 <Progress
-                  percent={(mockCircuitBreaker.triggers.dailyLoss.current / mockCircuitBreaker.triggers.dailyLoss.limit) * 100}
+                  percent={circuitBreaker.triggers.dailyLoss.limit > 0 ? (circuitBreaker.triggers.dailyLoss.current / circuitBreaker.triggers.dailyLoss.limit) * 100 : 0}
                   showInfo={false}
-                  strokeColor={mockCircuitBreaker.triggers.dailyLoss.current > mockCircuitBreaker.triggers.dailyLoss.limit * 0.8 ? '#ef4444' : '#3b82f6'}
+                  strokeColor={circuitBreaker.triggers.dailyLoss.current > circuitBreaker.triggers.dailyLoss.limit * 0.8 ? '#ef4444' : '#3b82f6'}
                 />
               </div>
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-gray-400">波动率</span>
                   <span className="font-mono">
-                    {(mockCircuitBreaker.triggers.volatility.current * 100).toFixed(1)}% / {(mockCircuitBreaker.triggers.volatility.limit * 100).toFixed(0)}%
+                    {(circuitBreaker.triggers.volatility.current * 100).toFixed(1)}% / {(circuitBreaker.triggers.volatility.limit * 100).toFixed(0)}%
                   </span>
                 </div>
                 <Progress
-                  percent={(mockCircuitBreaker.triggers.volatility.current / mockCircuitBreaker.triggers.volatility.limit) * 100}
+                  percent={circuitBreaker.triggers.volatility.limit > 0 ? (circuitBreaker.triggers.volatility.current / circuitBreaker.triggers.volatility.limit) * 100 : 0}
                   showInfo={false}
-                  strokeColor={mockCircuitBreaker.triggers.volatility.current > mockCircuitBreaker.triggers.volatility.limit * 0.8 ? '#ef4444' : '#3b82f6'}
+                  strokeColor={circuitBreaker.triggers.volatility.current > circuitBreaker.triggers.volatility.limit * 0.8 ? '#ef4444' : '#3b82f6'}
                 />
               </div>
               <div className="pt-4 border-t border-dark-border flex justify-between text-sm">
                 <span className="text-gray-400">今日盈亏</span>
-                <NumberDisplay value={mockCircuitBreaker.dailyPnL} type="currency" colorize showSign />
+                <NumberDisplay value={circuitBreaker.dailyPnl} type="currency" colorize showSign />
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-400">连续亏损次数</span>
-                <span className="font-mono">{mockCircuitBreaker.consecutiveLosses}</span>
+                <span className="font-mono">{circuitBreaker.consecutiveLosses}</span>
               </div>
             </div>
           </Card>
@@ -177,7 +279,7 @@ export default function RiskCenter() {
         {/* 因子暴露 */}
         <Col xs={24} lg={12}>
           <Card title="因子暴露" subtitle="多因子风险分解">
-            <RiskRadarChart data={mockFactorExposure} height={300} />
+            <RiskRadarChart data={factorExposure} height={300} />
           </Card>
         </Col>
       </Row>
@@ -186,7 +288,7 @@ export default function RiskCenter() {
         {/* 行业暴露 */}
         <Col xs={24} lg={12}>
           <Card title="行业暴露" subtitle="按市值占比">
-            <PieChart data={mockSectorExposure} height={300} />
+            <PieChart data={sectorExposure} height={300} />
           </Card>
         </Col>
 
@@ -195,10 +297,10 @@ export default function RiskCenter() {
           <Card title="风险指标详情">
             <Table
               dataSource={[
-                { key: 1, metric: 'Beta', value: mockRiskMetrics.beta, benchmark: 1.0, status: 'normal' },
-                { key: 2, metric: '最大回撤', value: mockRiskMetrics.maxDrawdown, benchmark: -0.15, status: 'normal' },
-                { key: 3, metric: '当前回撤', value: mockRiskMetrics.currentDrawdown, benchmark: -0.05, status: 'normal' },
-                { key: 4, metric: '夏普比率', value: mockRiskMetrics.sharpe, benchmark: 1.5, status: 'good' },
+                { key: 1, metric: 'Beta', value: riskMetrics.beta, benchmark: 1.0, status: 'normal' },
+                { key: 2, metric: '最大回撤', value: riskMetrics.maxDrawdown, benchmark: -0.15, status: 'normal' },
+                { key: 3, metric: '当前回撤', value: riskMetrics.currentDrawdown, benchmark: -0.05, status: 'normal' },
+                { key: 4, metric: '夏普比率', value: riskMetrics.sharpe, benchmark: 1.5, status: 'good' },
               ]}
               columns={[
                 { title: '指标', dataIndex: 'metric', key: 'metric' },

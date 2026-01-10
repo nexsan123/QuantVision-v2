@@ -4,7 +4,7 @@
  *
  * 显示回放期间的统计和AI洞察
  */
-import { Button, Progress, Empty } from 'antd'
+import { Button, Progress } from 'antd'
 import {
   FileTextOutlined,
   SaveOutlined,

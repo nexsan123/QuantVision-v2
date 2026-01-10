@@ -9,7 +9,7 @@ import { Card } from '@/components/ui'
 import type { FactorAttribution, FactorExposure } from '@/types/attribution'
 import { FACTOR_LABELS } from '@/types/attribution'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
 interface FactorChartProps {
   data: FactorAttribution

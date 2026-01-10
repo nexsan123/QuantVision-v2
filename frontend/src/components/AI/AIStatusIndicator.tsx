@@ -3,7 +3,7 @@
  * PRD 4.2
  */
 import { useState } from 'react'
-import { Tooltip, Button, Dropdown, MenuProps, Spin } from 'antd'
+import { Tooltip, Dropdown, MenuProps, Spin } from 'antd'
 import { SyncOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import {
   AIConnectionStatus,

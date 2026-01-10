@@ -2,10 +2,9 @@
  * 因子有效性验证面板组件
  * PRD 4.3 因子有效性验证
  */
-import { Progress, Tag, Tooltip, Button, Divider } from 'antd'
+import { Progress, Tag, Button } from 'antd'
 import {
   ExperimentOutlined,
-  InfoCircleOutlined,
   BulbOutlined,
   WarningOutlined,
   PlusOutlined,
