@@ -4,10 +4,38 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConfigProvider, theme, Result, Button } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { logger } from './utils/logger'
 import App from './App'
 import './styles/global.css'
+
+// 设置 dayjs 中文语言
+dayjs.locale('zh-cn')
+
+// 全局错误过滤器 - 忽略第三方库的非关键错误
+window.addEventListener('error', (event) => {
+  const msg = event.message || ''
+  // 过滤 TradingView 相关错误
+  if (msg.includes('list') && msg.includes('undefined') ||
+      msg.includes('tradingview') ||
+      msg.includes('Failed to fetch')) {
+    event.preventDefault()
+    return false
+  }
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason?.message || event.reason?.toString() || ''
+  // 过滤 TradingView 相关的 Promise 拒绝
+  if (reason.includes('list') ||
+      reason.includes('tradingview') ||
+      reason.includes('Failed to fetch')) {
+    event.preventDefault()
+    return false
+  }
+})
 
 // 全局错误处理回调
 const handleGlobalError = (error: Error, errorInfo: React.ErrorInfo) => {
@@ -63,6 +91,26 @@ const queryClient = new QueryClient({
   },
 })
 
+// 隐藏启动加载动画
+const hideAppLoader = () => {
+  const loader = document.getElementById('app-loader')
+  if (loader) {
+    // 更新状态文字
+    const status = loader.querySelector('.loader-status')
+    if (status) {
+      status.textContent = '加载完成'
+    }
+    // 延迟隐藏，让用户看到加载完成
+    setTimeout(() => {
+      loader.classList.add('hidden')
+      // 完全移除元素
+      setTimeout(() => {
+        loader.remove()
+      }, 500)
+    }, 300)
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary
@@ -94,3 +142,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </React.StrictMode>
 )
+
+// React 渲染完成后隐藏加载动画
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    hideAppLoader()
+  })
+})

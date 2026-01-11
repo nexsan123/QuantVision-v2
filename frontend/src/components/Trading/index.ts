@@ -8,6 +8,7 @@ export { TradingEventCard } from './TradingEventCard'
 export { ConnectionStatus } from './ConnectionStatus'
 export { TradingModeToggle } from './TradingModeToggle'
 export { PriceTicker, PriceGrid } from './PriceTicker'
+export { StockSearch } from './StockSearch'
 
 // 类型重导出
 export type {

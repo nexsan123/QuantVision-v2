@@ -376,22 +376,141 @@ PRESET_ANSWERS = {
 }
 
 
-# ==================== Claude API 调用 ====================
+# ==================== 可用模型配置 ====================
 
-async def call_claude_api(
+class AIModelInfo(BaseModel):
+    """AI模型信息"""
+    id: str
+    name: str
+    provider: str  # "anthropic" | "openai" | "deepseek" | "google"
+    description: str
+    max_tokens: int = 4096
+    is_recommended: bool = False
+    tier: str = "standard"  # "economy" | "standard" | "premium"
+
+
+# 多平台AI模型列表
+AVAILABLE_MODELS: dict[str, AIModelInfo] = {
+    # ========== Anthropic Claude (最新模型) ==========
+    "claude-opus-4-5-20250514": AIModelInfo(
+        id="claude-opus-4-5-20250514",
+        name="Claude 4.5 Opus",
+        provider="anthropic",
+        description="Anthropic最强模型，顶级推理能力",
+        max_tokens=8192,
+        is_recommended=True,
+        tier="premium"
+    ),
+    "claude-sonnet-4-20250514": AIModelInfo(
+        id="claude-sonnet-4-20250514",
+        name="Claude Sonnet 4",
+        provider="anthropic",
+        description="最新旗舰模型，性能卓越，推荐日常使用",
+        max_tokens=8192,
+        is_recommended=False,
+        tier="premium"
+    ),
+    "claude-3-5-sonnet-20241022": AIModelInfo(
+        id="claude-3-5-sonnet-20241022",
+        name="Claude 3.5 Sonnet",
+        provider="anthropic",
+        description="上一代高性能模型，稳定可靠",
+        max_tokens=8192,
+        is_recommended=False,
+        tier="standard"
+    ),
+    "claude-3-5-haiku-20241022": AIModelInfo(
+        id="claude-3-5-haiku-20241022",
+        name="Claude 3.5 Haiku",
+        provider="anthropic",
+        description="快速响应，成本较低",
+        max_tokens=8192,
+        is_recommended=False,
+        tier="economy"
+    ),
+
+    # ========== OpenAI GPT ==========
+    "gpt-4o": AIModelInfo(
+        id="gpt-4o",
+        name="GPT-4o",
+        provider="openai",
+        description="OpenAI最新多模态模型",
+        max_tokens=4096,
+        is_recommended=False,
+        tier="premium"
+    ),
+    "gpt-4-turbo": AIModelInfo(
+        id="gpt-4-turbo",
+        name="GPT-4 Turbo",
+        provider="openai",
+        description="GPT-4增强版，128k上下文",
+        max_tokens=4096,
+        is_recommended=False,
+        tier="premium"
+    ),
+    "gpt-3.5-turbo": AIModelInfo(
+        id="gpt-3.5-turbo",
+        name="GPT-3.5 Turbo",
+        provider="openai",
+        description="快速经济，适合简单任务",
+        max_tokens=4096,
+        is_recommended=False,
+        tier="economy"
+    ),
+
+    # ========== DeepSeek ==========
+    "deepseek-chat": AIModelInfo(
+        id="deepseek-chat",
+        name="DeepSeek V3",
+        provider="deepseek",
+        description="国产最强开源模型，性价比极高",
+        max_tokens=8192,
+        is_recommended=False,
+        tier="standard"
+    ),
+    "deepseek-coder": AIModelInfo(
+        id="deepseek-coder",
+        name="DeepSeek Coder",
+        provider="deepseek",
+        description="专注代码生成，编程能力强",
+        max_tokens=8192,
+        is_recommended=False,
+        tier="standard"
+    ),
+}
+
+# 当前选择的模型 (全局状态，生产环境应使用Redis/数据库)
+_current_model_id: str = "claude-opus-4-5-20250514"
+
+
+def get_current_model() -> AIModelInfo:
+    """获取当前选择的模型"""
+    return AVAILABLE_MODELS.get(_current_model_id, AVAILABLE_MODELS["claude-opus-4-5-20250514"])
+
+
+# ==================== 多平台 API 调用 ====================
+
+def get_api_key_for_provider(provider: str) -> Optional[str]:
+    """获取指定平台的API密钥"""
+    if provider == "anthropic":
+        return os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
+    elif provider == "openai":
+        return os.getenv("OPENAI_API_KEY")
+    elif provider == "deepseek":
+        return os.getenv("DEEPSEEK_API_KEY")
+    return None
+
+
+async def call_anthropic_api(
     messages: List[dict],
     system_prompt: str,
-    max_tokens: int = 1024
+    model: str,
+    max_tokens: int,
+    api_key: str
 ) -> Optional[str]:
-    """调用 Claude API"""
-    api_key = os.getenv("CLAUDE_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
-
-    if not api_key:
-        logger.warning("Claude API Key not configured, using preset answers")
-        return None
-
+    """调用 Anthropic Claude API"""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
@@ -400,23 +519,138 @@ async def call_claude_api(
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-3-haiku-20240307",
+                    "model": model,
                     "max_tokens": max_tokens,
                     "system": system_prompt,
                     "messages": messages,
                 },
             )
-
             if response.status_code == 200:
                 data = response.json()
                 return data["content"][0]["text"]
             else:
-                logger.error(f"Claude API error: {response.status_code} - {response.text}")
+                logger.error(f"Anthropic API error: {response.status_code} - {response.text}")
                 return None
-
     except Exception as e:
-        logger.error(f"Claude API call failed: {str(e)}")
+        logger.error(f"Anthropic API call failed: {str(e)}")
         return None
+
+
+async def call_openai_api(
+    messages: List[dict],
+    system_prompt: str,
+    model: str,
+    max_tokens: int,
+    api_key: str
+) -> Optional[str]:
+    """调用 OpenAI GPT API"""
+    try:
+        # 构建OpenAI格式的消息
+        openai_messages = [{"role": "system", "content": system_prompt}]
+        openai_messages.extend(messages)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "messages": openai_messages,
+                },
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            else:
+                logger.error(f"OpenAI API error: {response.status_code} - {response.text}")
+                return None
+    except Exception as e:
+        logger.error(f"OpenAI API call failed: {str(e)}")
+        return None
+
+
+async def call_deepseek_api(
+    messages: List[dict],
+    system_prompt: str,
+    model: str,
+    max_tokens: int,
+    api_key: str
+) -> Optional[str]:
+    """调用 DeepSeek API (兼容OpenAI格式)"""
+    try:
+        # DeepSeek使用OpenAI兼容格式
+        deepseek_messages = [{"role": "system", "content": system_prompt}]
+        deepseek_messages.extend(messages)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": max_tokens,
+                    "messages": deepseek_messages,
+                },
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+            else:
+                logger.error(f"DeepSeek API error: {response.status_code} - {response.text}")
+                return None
+    except Exception as e:
+        logger.error(f"DeepSeek API call failed: {str(e)}")
+        return None
+
+
+async def call_ai_api(
+    messages: List[dict],
+    system_prompt: str,
+    max_tokens: int = 1024,
+    model_id: Optional[str] = None
+) -> Optional[str]:
+    """统一的AI API调用入口"""
+    # 使用指定模型或当前选择的模型
+    model = model_id or _current_model_id
+    model_info = AVAILABLE_MODELS.get(model, get_current_model())
+    provider = model_info.provider
+
+    # 获取对应平台的API密钥
+    api_key = get_api_key_for_provider(provider)
+    if not api_key:
+        logger.warning(f"{provider} API Key not configured, using preset answers")
+        return None
+
+    # 根据平台调用对应的API
+    effective_max_tokens = min(max_tokens, model_info.max_tokens)
+
+    if provider == "anthropic":
+        return await call_anthropic_api(messages, system_prompt, model, effective_max_tokens, api_key)
+    elif provider == "openai":
+        return await call_openai_api(messages, system_prompt, model, effective_max_tokens, api_key)
+    elif provider == "deepseek":
+        return await call_deepseek_api(messages, system_prompt, model, effective_max_tokens, api_key)
+    else:
+        logger.error(f"Unknown provider: {provider}")
+        return None
+
+
+# 保持向后兼容的别名
+async def call_claude_api(
+    messages: List[dict],
+    system_prompt: str,
+    max_tokens: int = 1024,
+    model_id: Optional[str] = None
+) -> Optional[str]:
+    """向后兼容的Claude API调用"""
+    return await call_ai_api(messages, system_prompt, max_tokens, model_id)
 
 
 def find_preset_answer(question: str) -> Optional[str]:
@@ -549,20 +783,86 @@ class AIConnectionStatus(BaseModel):
     """AI连接状态"""
     is_connected: bool
     status: str  # 'connected' | 'connecting' | 'disconnected' | 'error'
-    model_name: str = "Claude 4.5 Sonnet"
+    model_id: str
+    model_name: str
+    model_description: str
+    model_tier: str
     last_heartbeat: Optional[datetime] = None
     latency_ms: Optional[int] = None
     error_message: Optional[str] = None
     can_reconnect: bool = True
+    has_api_key: bool = False
 
 
-# 全局状态 (生产环境应使用Redis)
-_ai_status = AIConnectionStatus(
-    is_connected=True,
-    status="connected",
-    last_heartbeat=datetime.now(),
-    latency_ms=45
-)
+class ModelSwitchRequest(BaseModel):
+    """模型切换请求"""
+    model_id: str = Field(..., description="目标模型ID")
+
+
+class ModelListResponse(BaseModel):
+    """模型列表响应"""
+    models: List[AIModelInfo]
+    current_model_id: str
+
+
+class ProviderStatus(BaseModel):
+    """平台状态"""
+    name: str
+    has_api_key: bool
+    models: List[str]
+
+
+def _build_ai_status() -> AIConnectionStatus:
+    """构建当前AI状态"""
+    current_model = get_current_model()
+    provider = current_model.provider
+    api_key = get_api_key_for_provider(provider)
+
+    # 构建错误消息
+    if not api_key:
+        env_var_map = {
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY"
+        }
+        error_msg = f"未配置 {env_var_map.get(provider, provider.upper() + '_API_KEY')}"
+    else:
+        error_msg = None
+
+    return AIConnectionStatus(
+        is_connected=bool(api_key),
+        status="connected" if api_key else "disconnected",
+        model_id=current_model.id,
+        model_name=current_model.name,
+        model_description=current_model.description,
+        model_tier=current_model.tier,
+        last_heartbeat=datetime.now(),
+        latency_ms=45 if api_key else None,
+        error_message=error_msg,
+        can_reconnect=True,
+        has_api_key=bool(api_key)
+    )
+
+
+@router.get("/providers", summary="获取各平台API配置状态")
+async def get_providers_status():
+    """
+    获取各AI平台的API密钥配置状态
+    """
+    providers = {}
+    for model in AVAILABLE_MODELS.values():
+        if model.provider not in providers:
+            providers[model.provider] = {
+                "name": model.provider,
+                "has_api_key": bool(get_api_key_for_provider(model.provider)),
+                "models": []
+            }
+        providers[model.provider]["models"].append(model.name)
+
+    return {
+        "providers": list(providers.values()),
+        "current_provider": get_current_model().provider
+    }
 
 
 @router.get("/status", response_model=AIConnectionStatus, summary="获取AI连接状态")
@@ -573,10 +873,59 @@ async def get_ai_status():
     返回:
     - is_connected: 是否已连接
     - status: 状态 (connected/connecting/disconnected/error)
+    - model_id: 当前模型ID
     - model_name: 模型名称
     - latency_ms: 延迟毫秒数
+    - has_api_key: 是否已配置API Key
     """
-    return _ai_status
+    return _build_ai_status()
+
+
+@router.get("/models", response_model=ModelListResponse, summary="获取可用模型列表")
+async def get_available_models():
+    """
+    获取所有可用的AI模型列表
+
+    返回:
+    - models: 可用模型列表
+    - current_model_id: 当前选择的模型ID
+    """
+    return ModelListResponse(
+        models=list(AVAILABLE_MODELS.values()),
+        current_model_id=_current_model_id
+    )
+
+
+@router.post("/models/switch", summary="切换AI模型")
+async def switch_model(request: ModelSwitchRequest):
+    """
+    切换到指定的AI模型
+
+    参数:
+    - model_id: 目标模型ID
+
+    返回:
+    - success: 是否切换成功
+    - model: 切换后的模型信息
+    """
+    global _current_model_id
+
+    if request.model_id not in AVAILABLE_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的模型ID: {request.model_id}。可用模型: {list(AVAILABLE_MODELS.keys())}"
+        )
+
+    _current_model_id = request.model_id
+    new_model = get_current_model()
+
+    logger.info(f"AI model switched to: {new_model.name} ({new_model.id})")
+
+    return {
+        "success": True,
+        "message": f"已切换到 {new_model.name}",
+        "model": new_model
+    }
 
 
 @router.post("/reconnect", summary="重新连接AI")

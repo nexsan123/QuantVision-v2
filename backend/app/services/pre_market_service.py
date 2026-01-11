@@ -1,14 +1,18 @@
 """
 盘前扫描服务
 PRD 4.18.0 盘前扫描器
+
+数据源: Polygon API (行情) + Mock (降级)
 """
 import random
 import uuid
 from datetime import date, datetime
 from typing import Optional
 
+import httpx
 import structlog
 
+from app.core.config import settings
 from app.schemas.pre_market import (
     CreateWatchlistRequest,
     IntradayWatchlist,
@@ -19,6 +23,91 @@ from app.schemas.pre_market import (
 )
 
 logger = structlog.get_logger()
+
+
+# ============ 数据源状态 ============
+
+class PreMarketDataSourceStatus:
+    """盘前服务数据源状态"""
+    def __init__(self):
+        self.is_mock = True
+        self.source = "mock"
+        self.error_message: Optional[str] = "Using mock data - Polygon API not connected"
+        self.last_sync: Optional[datetime] = None
+
+    def to_dict(self):
+        return {
+            "is_mock": self.is_mock,
+            "source": self.source,
+            "error_message": self.error_message,
+            "last_sync": self.last_sync.isoformat() if self.last_sync else None,
+        }
+
+
+_data_source_status = PreMarketDataSourceStatus()
+
+
+# ============ Polygon API 客户端 ============
+
+class PolygonPreMarketClient:
+    """Polygon API 盘前数据客户端"""
+
+    BASE_URL = "https://api.polygon.io"
+
+    def __init__(self):
+        self.api_key = getattr(settings, "POLYGON_API_KEY", None)
+
+    async def _request(self, endpoint: str, params: dict = None) -> Optional[dict]:
+        """发送API请求"""
+        if not self.api_key:
+            return None
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                url = f"{self.BASE_URL}{endpoint}"
+                params = params or {}
+                params["apiKey"] = self.api_key
+
+                response = await client.get(url, params=params)
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    logger.warning("polygon_premarket_error", status=response.status_code, endpoint=endpoint)
+                    return None
+        except Exception as e:
+            logger.warning("polygon_premarket_connection_error", error=str(e))
+            return None
+
+    async def get_gainers_losers(self, direction: str = "gainers") -> list[dict]:
+        """获取盘前涨跌榜"""
+        data = await self._request(f"/v2/snapshot/locale/us/markets/stocks/{direction}")
+        if data and "tickers" in data:
+            return data["tickers"]
+        return []
+
+    async def get_snapshot(self, symbol: str) -> Optional[dict]:
+        """获取单个股票快照"""
+        data = await self._request(f"/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}")
+        if data and "ticker" in data:
+            return data["ticker"]
+        return None
+
+    async def get_snapshots(self, symbols: list[str]) -> list[dict]:
+        """获取多个股票快照"""
+        if not symbols:
+            return []
+
+        tickers_param = ",".join(symbols)
+        data = await self._request(
+            "/v2/snapshot/locale/us/markets/stocks/tickers",
+            {"tickers": tickers_param}
+        )
+        if data and "tickers" in data:
+            return data["tickers"]
+        return []
+
+
+_polygon_client = PolygonPreMarketClient()
 
 
 class PreMarketService:
@@ -51,13 +140,154 @@ class PreMarketService:
         strategy_id: str,
         filters: PreMarketScanFilter,
     ) -> PreMarketScanResult:
-        """执行盘前扫描"""
+        """
+        执行盘前扫描
+
+        数据源优先级:
+        1. Polygon API (实时数据)
+        2. Mock 数据 (降级)
+        """
         logger.info("执行盘前扫描", strategy_id=strategy_id)
 
+        # 尝试从 Polygon 获取实时数据
+        real_data = await self._fetch_polygon_data()
+
+        if real_data:
+            matched_stocks = await self._process_polygon_data(real_data, filters)
+            _data_source_status.is_mock = False
+            _data_source_status.source = "polygon"
+            _data_source_status.error_message = None
+            _data_source_status.last_sync = datetime.now()
+            logger.info("使用 Polygon 实时数据", count=len(matched_stocks))
+        else:
+            matched_stocks = self._process_mock_data(filters)
+            _data_source_status.is_mock = True
+            _data_source_status.source = "mock"
+            _data_source_status.error_message = "Polygon API 不可用，使用演示数据"
+            logger.info("降级到 Mock 数据", count=len(matched_stocks))
+
+        # 按评分排序
+        matched_stocks.sort(key=lambda x: x.score, reverse=True)
+
+        # 生成AI建议
+        ai_suggestion = self._generate_ai_suggestion(matched_stocks[:10])
+
+        return PreMarketScanResult(
+            scan_time=datetime.now(),
+            strategy_id=strategy_id,
+            strategy_name=f"策略-{strategy_id[:8]}",
+            filters_applied=filters,
+            total_matched=len(matched_stocks),
+            stocks=matched_stocks,
+            ai_suggestion=ai_suggestion,
+        )
+
+    async def _fetch_polygon_data(self) -> Optional[list[dict]]:
+        """从 Polygon 获取盘前涨跌榜数据"""
+        try:
+            # 获取涨幅榜和跌幅榜
+            gainers = await _polygon_client.get_gainers_losers("gainers")
+            losers = await _polygon_client.get_gainers_losers("losers")
+
+            if gainers or losers:
+                return gainers + losers
+            return None
+        except Exception as e:
+            logger.warning("fetch_polygon_data_error", error=str(e))
+            return None
+
+    async def _process_polygon_data(
+        self,
+        tickers: list[dict],
+        filters: PreMarketScanFilter
+    ) -> list[PreMarketStock]:
+        """处理 Polygon 返回的数据"""
+        matched_stocks = []
+
+        for ticker in tickers:
+            try:
+                symbol = ticker.get("ticker", "")
+                day = ticker.get("day", {})
+                prevDay = ticker.get("prevDay", {})
+
+                if not day or not prevDay:
+                    continue
+
+                # 提取数据
+                current_price = day.get("c", 0) or day.get("vw", 0)
+                prev_close = prevDay.get("c", 0)
+
+                if prev_close == 0:
+                    continue
+
+                gap = (current_price - prev_close) / prev_close
+                volume = day.get("v", 0)
+                prev_volume = prevDay.get("v", 1)
+                vol_ratio = volume / prev_volume if prev_volume > 0 else 0
+
+                # 计算波动率 (简化: 使用日内波动)
+                high = day.get("h", current_price)
+                low = day.get("l", current_price)
+                volatility = (high - low) / current_price if current_price > 0 else 0
+
+                avg_daily_value = prev_close * prev_volume
+
+                # 应用筛选
+                if abs(gap) < filters.min_gap:
+                    continue
+                if vol_ratio < filters.min_premarket_volume:
+                    continue
+                if volatility < filters.min_volatility:
+                    continue
+                if avg_daily_value < filters.min_liquidity:
+                    continue
+
+                # 计算评分
+                score, breakdown = self._calculate_score(
+                    gap=gap,
+                    vol_ratio=vol_ratio,
+                    volatility=volatility,
+                    has_news=False,  # Polygon 免费版不提供新闻
+                )
+
+                # 从股票池获取名称，如果没有则用 symbol
+                stock_info = next(
+                    (s for s in self.SAMPLE_UNIVERSE if s["symbol"] == symbol),
+                    {"symbol": symbol, "name": symbol}
+                )
+
+                stock = PreMarketStock(
+                    symbol=symbol,
+                    name=stock_info.get("name", symbol),
+                    gap=gap,
+                    gap_direction="up" if gap > 0 else "down",
+                    premarket_price=current_price,
+                    premarket_volume=int(volume),
+                    premarket_volume_ratio=vol_ratio,
+                    prev_close=prev_close,
+                    prev_volume=int(prev_volume),
+                    volatility=volatility,
+                    avg_daily_volume=int(prev_volume),
+                    avg_daily_value=avg_daily_value,
+                    has_news=False,
+                    news_headline=None,
+                    is_earnings_day=False,
+                    score=score,
+                    score_breakdown=breakdown,
+                )
+
+                matched_stocks.append(stock)
+            except Exception as e:
+                logger.warning("process_ticker_error", ticker=ticker.get("ticker"), error=str(e))
+                continue
+
+        return matched_stocks
+
+    def _process_mock_data(self, filters: PreMarketScanFilter) -> list[PreMarketStock]:
+        """处理 Mock 数据"""
         matched_stocks = []
 
         for stock_info in self.SAMPLE_UNIVERSE:
-            # 模拟盘前数据
             pm_data = self._generate_premarket_data(stock_info["symbol"])
 
             # 应用筛选条件
@@ -74,7 +304,6 @@ class PreMarketService:
             if filters.is_earnings_day is not None and pm_data["is_earnings_day"] != filters.is_earnings_day:
                 continue
 
-            # 计算评分
             score, breakdown = self._calculate_score(
                 gap=pm_data["gap"],
                 vol_ratio=pm_data["vol_ratio"],
@@ -104,21 +333,7 @@ class PreMarketService:
 
             matched_stocks.append(stock)
 
-        # 按评分排序
-        matched_stocks.sort(key=lambda x: x.score, reverse=True)
-
-        # 生成AI建议
-        ai_suggestion = self._generate_ai_suggestion(matched_stocks[:10])
-
-        return PreMarketScanResult(
-            scan_time=datetime.now(),
-            strategy_id=strategy_id,
-            strategy_name=f"策略-{strategy_id[:8]}",
-            filters_applied=filters,
-            total_matched=len(matched_stocks),
-            stocks=matched_stocks,
-            ai_suggestion=ai_suggestion,
-        )
+        return matched_stocks
 
     def _generate_premarket_data(self, symbol: str) -> dict:
         """生成模拟盘前数据"""
@@ -290,3 +505,8 @@ def get_pre_market_service() -> PreMarketService:
     if _pre_market_service is None:
         _pre_market_service = PreMarketService()
     return _pre_market_service
+
+
+def get_premarket_data_source_status() -> dict:
+    """获取盘前服务数据源状态"""
+    return _data_source_status.to_dict()

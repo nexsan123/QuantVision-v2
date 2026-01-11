@@ -16,6 +16,7 @@ const Templates = lazy(() => import('./pages/Templates'))
 const TradingStream = lazy(() => import('./pages/TradingStream'))
 const StrategyReplay = lazy(() => import('./pages/StrategyReplay'))
 const Intraday = lazy(() => import('./pages/Intraday'))
+const Account = lazy(() => import('./pages/Account'))
 
 // 页面加载占位符
 const PageLoading = () => (
@@ -45,6 +46,7 @@ function App() {
       <Route path="/" element={<MainLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<PageWrapper><Dashboard /></PageWrapper>} />
+        <Route path="account" element={<PageWrapper><Account /></PageWrapper>} />
         <Route path="my-strategies" element={<PageWrapper><MyStrategies /></PageWrapper>} />
         <Route path="factor-lab" element={<PageWrapper><FactorLab /></PageWrapper>} />
         <Route path="strategy" element={<PageWrapper><StrategyBuilder /></PageWrapper>} />

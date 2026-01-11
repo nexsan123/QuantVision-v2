@@ -29,6 +29,16 @@ interface ElectronAPI {
     openExternal: (url: string) => Promise<void>
   }
 
+  // 后端服务管理
+  backend: {
+    getStatus: () => Promise<{
+      running: boolean
+      url: string
+      pid: number | null
+    }>
+    restart: () => Promise<boolean>
+  }
+
   // 事件监听
   on: (channel: string, callback: (...args: any[]) => void) => void
   removeListener: (channel: string, callback: (...args: any[]) => void) => void

@@ -174,7 +174,7 @@ function IndicatorPanelComponent({
 
   return (
     <Dropdown
-      dropdownRender={() => menuContent}
+      popupRender={() => menuContent}
       trigger={['click']}
       placement="bottomRight"
       disabled={disabled}

@@ -154,6 +154,20 @@ export const strategyStorage = {
   isInitialized(): boolean {
     return hasItem(STORAGE_KEYS.STRATEGIES)
   },
+
+  /**
+   * 获取最后同步时间
+   */
+  getLastSync(): string | null {
+    return getItem<string | null>('strategies_last_sync', null)
+  },
+
+  /**
+   * 设置最后同步时间
+   */
+  setLastSync(time: string): void {
+    setItem('strategies_last_sync', time)
+  },
 }
 
 // ==================== 部署存储操作 ====================

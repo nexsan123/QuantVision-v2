@@ -2,7 +2,7 @@
  * 盘前扫描器组件
  * PRD 4.18.0 盘前扫描器
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -18,6 +18,7 @@ import {
   ReloadOutlined,
   RightOutlined,
   BulbOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -30,6 +31,7 @@ import {
   getScoreColorClass,
 } from '../../types/preMarket'
 import { intradayStorage } from '../../services/storageService'
+import { scanPreMarket } from '../../services/preMarketService'
 
 interface PreMarketScannerProps {
   strategyId: string
@@ -46,6 +48,7 @@ export default function PreMarketScanner({
   const [filters, setFilters] = useState<PreMarketScanFilter>(DEFAULT_FILTERS)
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set())
   const [scanning, setScanning] = useState(false)
+  const [dataError, setDataError] = useState<string | null>(null)
 
   // 首次加载时执行扫描并恢复已保存的选择
   useEffect(() => {
@@ -57,110 +60,29 @@ export default function PreMarketScanner({
     }
   }, [strategyId])
 
-  // 执行扫描 (模拟)
-  const handleScan = async () => {
+  // 执行扫描
+  const handleScan = useCallback(async () => {
     setScanning(true)
+    setDataError(null)
     try {
-      // 模拟 API 调用
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // 模拟数据
-      const mockResult: PreMarketScanResult = {
-        scan_time: new Date().toISOString(),
-        strategy_id: strategyId,
-        strategy_name: '动量突破策略',
-        filters_applied: filters,
-        total_matched: 8,
-        stocks: [
-          {
-            symbol: 'NVDA',
-            name: 'NVIDIA Corp.',
-            gap: 0.042,
-            gap_direction: 'up',
-            premarket_price: 525.0,
-            premarket_volume: 2500000,
-            premarket_volume_ratio: 3.2,
-            prev_close: 504.0,
-            prev_volume: 15000000,
-            volatility: 0.045,
-            avg_daily_volume: 15000000,
-            avg_daily_value: 7500000000,
-            has_news: true,
-            news_headline: 'NVIDIA 宣布新一代AI芯片',
-            is_earnings_day: false,
-            score: 85,
-            score_breakdown: { gap: 42, volume: 32, volatility: 22.5, news: 10, weights: { gap: 0.3, volume: 0.3, volatility: 0.2, news: 1 } },
-          },
-          {
-            symbol: 'TSLA',
-            name: 'Tesla Inc.',
-            gap: 0.035,
-            gap_direction: 'up',
-            premarket_price: 252.0,
-            premarket_volume: 3200000,
-            premarket_volume_ratio: 2.8,
-            prev_close: 243.5,
-            prev_volume: 25000000,
-            volatility: 0.052,
-            avg_daily_volume: 25000000,
-            avg_daily_value: 6000000000,
-            has_news: true,
-            news_headline: 'Tesla 交付量超预期',
-            is_earnings_day: false,
-            score: 78,
-            score_breakdown: { gap: 35, volume: 28, volatility: 26, news: 10, weights: { gap: 0.3, volume: 0.3, volatility: 0.2, news: 1 } },
-          },
-          {
-            symbol: 'AMD',
-            name: 'Advanced Micro Devices',
-            gap: -0.028,
-            gap_direction: 'down',
-            premarket_price: 142.0,
-            premarket_volume: 1800000,
-            premarket_volume_ratio: 2.5,
-            prev_close: 146.0,
-            prev_volume: 18000000,
-            volatility: 0.038,
-            avg_daily_volume: 18000000,
-            avg_daily_value: 2600000000,
-            has_news: false,
-            is_earnings_day: false,
-            score: 62,
-            score_breakdown: { gap: 28, volume: 25, volatility: 19, news: 0, weights: { gap: 0.3, volume: 0.3, volatility: 0.2, news: 1 } },
-          },
-          {
-            symbol: 'META',
-            name: 'Meta Platforms Inc.',
-            gap: 0.025,
-            gap_direction: 'up',
-            premarket_price: 512.0,
-            premarket_volume: 1200000,
-            premarket_volume_ratio: 2.2,
-            prev_close: 499.5,
-            prev_volume: 12000000,
-            volatility: 0.032,
-            avg_daily_volume: 12000000,
-            avg_daily_value: 6000000000,
-            has_news: false,
-            is_earnings_day: false,
-            score: 55,
-            score_breakdown: { gap: 25, volume: 22, volatility: 16, news: 0, weights: { gap: 0.3, volume: 0.3, volatility: 0.2, news: 1 } },
-          },
-        ],
-        ai_suggestion: 'NVDA, TSLA 今日有重大新闻催化，建议重点关注；NVDA 跳空幅度较大，注意风险控制',
-      }
-
-      setScanResult(mockResult)
+      // 调用真实 API
+      const result = await scanPreMarket(strategyId, filters)
+      setScanResult(result)
 
       // 默认选中高评分股票
-      const topSymbols = mockResult.stocks
+      const topSymbols = result.stocks
         .filter((s) => s.score >= 70)
         .map((s) => s.symbol)
       setSelectedSymbols(new Set(topSymbols))
+    } catch (err) {
+      console.error('Pre-market scan failed:', err)
+      setDataError('盘前扫描服务暂不可用，请检查后端连接')
+      message.error('盘前扫描失败，请稍后重试')
+      setScanResult(null)
     } finally {
       setScanning(false)
     }
-  }
+  }, [strategyId, filters])
 
   // 切换选中
   const toggleSymbol = (symbol: string) => {
@@ -394,18 +316,34 @@ export default function PreMarketScanner({
 
       {/* 股票列表 */}
       <div className="px-6 py-4">
-        <Spin spinning={scanning}>
-          <Table
-            columns={columns}
-            dataSource={scanResult?.stocks || []}
-            rowKey="symbol"
-            size="small"
-            pagination={false}
-            rowClassName={(record) =>
-              selectedSymbols.has(record.symbol) ? 'bg-blue-900/20' : ''
+        {dataError ? (
+          <Alert
+            message="数据加载失败"
+            description={dataError}
+            type="warning"
+            showIcon
+            icon={<WarningOutlined />}
+            action={
+              <Button size="small" onClick={handleScan}>
+                重试
+              </Button>
             }
           />
-        </Spin>
+        ) : (
+          <Spin spinning={scanning}>
+            <Table
+              columns={columns}
+              dataSource={scanResult?.stocks || []}
+              rowKey="symbol"
+              size="small"
+              pagination={false}
+              rowClassName={(record) =>
+                selectedSymbols.has(record.symbol) ? 'bg-blue-900/20' : ''
+              }
+              locale={{ emptyText: '暂无盘前扫描数据' }}
+            />
+          </Spin>
+        )}
 
         {/* AI 建议 */}
         {scanResult?.ai_suggestion && (

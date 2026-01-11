@@ -4,6 +4,8 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  // Electron 需要相对路径
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

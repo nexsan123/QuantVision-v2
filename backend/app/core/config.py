@@ -86,10 +86,14 @@ class Settings(BaseSettings):
         return self.CELERY_RESULT_BACKEND or self.REDIS_URL
 
     # === 数据源配置 ===
+    # Alpaca Trading API
     ALPACA_API_KEY: str = ""
     ALPACA_SECRET_KEY: str = ""
     ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
     ALPACA_DATA_URL: str = "https://data.alpaca.markets"
+
+    # Polygon.io Market Data API
+    POLYGON_API_KEY: str = ""
 
     # === 回测配置 ===
     BACKTEST_DEFAULT_CAPITAL: float = 1_000_000.0

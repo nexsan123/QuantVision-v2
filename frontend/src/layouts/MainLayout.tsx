@@ -12,9 +12,11 @@ import {
   AppstoreOutlined,
   PlayCircleOutlined,
   ThunderboltOutlined,
+  WalletOutlined,
 } from '@ant-design/icons'
 import { AIStatusIndicator } from '../components/AI'
 import { AlertBell } from '../components/Alert'
+import { DataSourceIndicator, useDataSourceStatus } from '../components/common/DataSourceIndicator'
 import { AIConnectionStatus } from '../types/ai'
 import { RiskAlert } from '../types/alert'
 
@@ -22,21 +24,53 @@ const { Sider, Content, Header } = Layout
 
 const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-  { key: '/my-strategies', icon: <FolderOutlined />, label: '我的策略' },
-  { key: '/templates', icon: <AppstoreOutlined />, label: '策略模板' },
-  { key: '/factor-lab', icon: <ExperimentOutlined />, label: '因子实验室' },
-  { key: '/strategy', icon: <SettingOutlined />, label: '策略构建' },
-  { key: '/strategy/replay', icon: <PlayCircleOutlined />, label: '策略回放' },
-  { key: '/backtest', icon: <LineChartOutlined />, label: '回测中心' },
-  { key: '/trading', icon: <SwapOutlined />, label: '交易执行' },
-  { key: '/intraday', icon: <ThunderboltOutlined />, label: '日内交易' },
-  { key: '/risk', icon: <SafetyOutlined />, label: '风险中心' },
+  { key: '/account', icon: <WalletOutlined />, label: '账户总览' },
+  {
+    key: 'strategy-group',
+    icon: <SettingOutlined />,
+    label: '策略',
+    children: [
+      { key: '/my-strategies', icon: <FolderOutlined />, label: '我的策略' },
+      { key: '/strategy', icon: <SettingOutlined />, label: '策略构建' },
+      { key: '/templates', icon: <AppstoreOutlined />, label: '策略模板' },
+      { key: '/factor-lab', icon: <ExperimentOutlined />, label: '因子实验室' },
+    ],
+  },
+  {
+    key: 'backtest-group',
+    icon: <LineChartOutlined />,
+    label: '回测',
+    children: [
+      { key: '/backtest', icon: <LineChartOutlined />, label: '回测中心' },
+      { key: '/strategy/replay', icon: <PlayCircleOutlined />, label: '策略回放' },
+    ],
+  },
+  {
+    key: 'trading-group',
+    icon: <SwapOutlined />,
+    label: '交易',
+    children: [
+      { key: '/trading', icon: <SwapOutlined />, label: '交易执行' },
+      { key: '/intraday', icon: <ThunderboltOutlined />, label: '日内交易' },
+    ],
+  },
+  {
+    key: 'risk-group',
+    icon: <SafetyOutlined />,
+    label: '风险',
+    children: [
+      { key: '/risk', icon: <SafetyOutlined />, label: '风险中心' },
+    ],
+  },
 ]
 
 export default function MainLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+
+  // 数据源状态
+  const { sources: dataSources, refresh: refreshDataSources } = useDataSourceStatus()
 
   // AI 连接状态
   const [aiStatus, setAiStatus] = useState<AIConnectionStatus>({
@@ -216,6 +250,7 @@ export default function MainLayout() {
       </Sider>
       <Layout>
         <Header className="!bg-dark-card !px-6 border-b border-dark-border flex items-center justify-end gap-4">
+          <DataSourceIndicator sources={dataSources} onRefresh={refreshDataSources} />
           <AIStatusIndicator status={aiStatus} onReconnect={handleReconnect} />
           <AlertBell
             alerts={alerts}

@@ -229,13 +229,26 @@ function TradingViewChartComponent({
       script.async = true
       script.onload = initWidget
       script.onerror = () => {
-        setError('无法加载 TradingView 库')
+        setError('无法加载 TradingView 库（需要网络连接）')
         setLoading(false)
       }
       document.head.appendChild(script)
     }
 
+    // 抑制 TradingView 的控制台错误
+    const originalError = console.error
+    console.error = (...args) => {
+      const msg = args[0]?.toString() || ''
+      // 过滤掉 TradingView 相关的网络错误
+      if (msg.includes('tradingview') || msg.includes('Failed to fetch') ||
+          msg.includes('support-portal') || msg.includes('conversions_zh')) {
+        return
+      }
+      originalError.apply(console, args)
+    }
+
     return () => {
+      console.error = originalError
       if (widgetRef.current) {
         try {
           widgetRef.current.remove()
@@ -245,7 +258,10 @@ function TradingViewChartComponent({
         isReadyRef.current = false
       }
     }
-  }, [symbol, interval, theme, height, autosize, chartStyle, indicators, showToolbar, showDrawingTools, onSymbolChange, onIntervalChange, onReady])
+  // 注意: symbol 和 interval 不在依赖数组中，因为我们用第二个 useEffect 来处理它们的变化
+  // 这样可以避免每次切换股票时重新创建整个 widget
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, height, autosize, chartStyle, showToolbar, showDrawingTools])
 
   // 重试加载
   const handleRetry = () => {
@@ -264,14 +280,81 @@ function TradingViewChartComponent({
 
   // 符号或周期变化时更新 (只在 widget 就绪后)
   useEffect(() => {
-    if (widgetRef.current && isReadyRef.current) {
-      try {
+    if (!widgetRef.current || !isReadyRef.current) return
+
+    try {
+      // 尝试使用高级 API (仅完整版 Charting Library 支持)
+      if (typeof widgetRef.current.activeChart === 'function') {
         widgetRef.current.activeChart().setSymbol(symbol, interval)
-      } catch (e) {
-        // widget 可能还未就绪，忽略错误
+      } else {
+        // 轻量级 widget (tv.js) 不支持动态切换，需要重建
+        // 先清理旧的
+        try {
+          widgetRef.current.remove()
+        } catch (e) { /* ignore */ }
+        widgetRef.current = null
+        isReadyRef.current = false
+
+        // 重新创建 widget
+        if (window.TradingView && containerRef.current) {
+          const bgColor = theme === 'dark' ? '#0a0a1a' : '#ffffff'
+          const toolbarBg = theme === 'dark' ? '#0d0d1f' : '#f5f5f5'
+          const gridColor = theme === 'dark' ? '#2a2a4a' : '#e0e0e0'
+          const textColor = theme === 'dark' ? '#9ca3af' : '#333333'
+          const studyIds = indicators.map(ind => ind.id)
+
+          const widgetConfig: any = {
+            container_id: containerId.current,
+            symbol: symbol,
+            interval: interval,
+            timezone: 'America/New_York',
+            theme: theme,
+            style: CHART_STYLE_MAP[chartStyle],
+            locale: 'zh_CN',
+            toolbar_bg: toolbarBg,
+            enable_publishing: false,
+            hide_side_toolbar: !showDrawingTools,
+            hide_top_toolbar: !showToolbar,
+            allow_symbol_change: true,
+            save_image: false,
+            autosize: autosize,
+            overrides: {
+              'mainSeriesProperties.candleStyle.upColor': '#22c55e',
+              'mainSeriesProperties.candleStyle.downColor': '#ef4444',
+              'mainSeriesProperties.candleStyle.borderUpColor': '#22c55e',
+              'mainSeriesProperties.candleStyle.borderDownColor': '#ef4444',
+              'mainSeriesProperties.candleStyle.wickUpColor': '#22c55e',
+              'mainSeriesProperties.candleStyle.wickDownColor': '#ef4444',
+              'paneProperties.background': bgColor,
+              'paneProperties.vertGridProperties.color': gridColor,
+              'paneProperties.horzGridProperties.color': gridColor,
+              'scalesProperties.textColor': textColor,
+            },
+            disabled_features: [
+              'header_symbol_search',
+              'header_compare',
+              'header_undo_redo',
+              'header_screenshot',
+              'header_fullscreen_button',
+            ],
+            enabled_features: [
+              'study_templates',
+              'use_localstorage_for_settings',
+            ],
+            studies: studyIds,
+          }
+
+          widgetRef.current = new window.TradingView.widget(widgetConfig)
+
+          setTimeout(() => {
+            isReadyRef.current = true
+          }, 800)
+        }
       }
+    } catch (e) {
+      console.warn('Symbol change failed:', e)
     }
-  }, [symbol, interval])
+  }, [symbol, interval, theme, autosize, chartStyle, indicators, showToolbar, showDrawingTools])
 
   // 计算容器样式
   const containerStyle: React.CSSProperties = autosize

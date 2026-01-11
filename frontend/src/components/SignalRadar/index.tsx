@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, Input, Select, Button, Badge, Spin, Empty, message } from 'antd'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import SignalList from './SignalList'
+import { getSignals } from '../../services/signalRadarService'
 import {
   Signal,
   SignalType,
@@ -31,127 +32,18 @@ export default function SignalRadar({ strategyId, onSignalClick }: SignalRadarPr
 
     setLoading(true)
     try {
-      // TODO: 调用实际API
-      // const params = new URLSearchParams();
-      // if (signalTypeFilter) params.append('signal_type', signalTypeFilter);
-      // if (strengthFilter) params.append('signal_strength', strengthFilter);
-      // if (searchText) params.append('search', searchText);
-      // const response = await fetch(`/api/v1/signal-radar/${strategyId}?${params}`);
-      // const data: SignalListResponse = await response.json();
-      // setSignals(data.signals);
-      // setSummary(data.summary);
-
-      // 模拟数据
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      const mockSignals: Signal[] = [
-        {
-          signalId: '1',
-          strategyId,
-          symbol: 'AAPL',
-          companyName: 'Apple Inc.',
-          signalType: 'buy',
-          signalStrength: 'strong',
-          signalScore: 85,
-          status: 'buy_signal',
-          triggeredFactors: [
-            { factorId: 'pe', factorName: '市盈率', currentValue: 22.5, threshold: 25, direction: 'below', nearTriggerPct: 100, isSatisfied: true },
-            { factorId: 'momentum', factorName: '动量', currentValue: 0.08, threshold: 0.05, direction: 'above', nearTriggerPct: 100, isSatisfied: true },
-          ],
-          currentPrice: 185.50,
-          targetPrice: 205.00,
-          stopLossPrice: 175.00,
-          expectedReturnPct: 0.105,
-          signalTime: new Date().toISOString(),
-          isHolding: false,
-        },
-        {
-          signalId: '2',
-          strategyId,
-          symbol: 'MSFT',
-          companyName: 'Microsoft Corp.',
-          signalType: 'buy',
-          signalStrength: 'medium',
-          signalScore: 72,
-          status: 'near_trigger',
-          triggeredFactors: [
-            { factorId: 'pe', factorName: '市盈率', currentValue: 28.5, threshold: 30, direction: 'below', nearTriggerPct: 85, isSatisfied: false },
-          ],
-          currentPrice: 378.20,
-          targetPrice: 420.00,
-          stopLossPrice: 360.00,
-          expectedReturnPct: 0.11,
-          signalTime: new Date().toISOString(),
-          isHolding: false,
-        },
-        {
-          signalId: '3',
-          strategyId,
-          symbol: 'GOOGL',
-          companyName: 'Alphabet Inc.',
-          signalType: 'sell',
-          signalStrength: 'strong',
-          signalScore: 90,
-          status: 'sell_signal',
-          triggeredFactors: [],
-          currentPrice: 142.80,
-          stopLossPrice: 135.00,
-          signalTime: new Date().toISOString(),
-          isHolding: true,
-        },
-        {
-          signalId: '4',
-          strategyId,
-          symbol: 'NVDA',
-          companyName: 'NVIDIA Corp.',
-          signalType: 'hold',
-          signalStrength: 'medium',
-          signalScore: 65,
-          status: 'holding',
-          triggeredFactors: [],
-          currentPrice: 495.60,
-          signalTime: new Date().toISOString(),
-          isHolding: true,
-        },
-        {
-          signalId: '5',
-          strategyId,
-          symbol: 'TSLA',
-          companyName: 'Tesla Inc.',
-          signalType: 'buy',
-          signalStrength: 'weak',
-          signalScore: 55,
-          status: 'monitoring',
-          triggeredFactors: [],
-          currentPrice: 248.50,
-          signalTime: new Date().toISOString(),
-          isHolding: false,
-        },
-      ]
-
-      // 应用筛选
-      let filtered = mockSignals
-      if (signalTypeFilter) {
-        filtered = filtered.filter(s => s.signalType === signalTypeFilter)
-      }
-      if (strengthFilter) {
-        filtered = filtered.filter(s => s.signalStrength === strengthFilter)
-      }
-      if (searchText) {
-        const search = searchText.toLowerCase()
-        filtered = filtered.filter(
-          s => s.symbol.toLowerCase().includes(search) ||
-               s.companyName.toLowerCase().includes(search)
-        )
-      }
-
-      setSignals(filtered)
-      setSummary({
-        buy: mockSignals.filter(s => s.signalType === 'buy').length,
-        sell: mockSignals.filter(s => s.signalType === 'sell').length,
-        hold: mockSignals.filter(s => s.signalType === 'hold').length,
+      // 调用真实 API
+      const response = await getSignals(strategyId, {
+        signalType: signalTypeFilter || undefined,
+        signalStrength: strengthFilter || undefined,
+        search: searchText || undefined,
+        limit: 50,
       })
-    } catch {
+
+      setSignals(response.signals)
+      setSummary(response.summary)
+    } catch (err) {
+      console.error('获取信号失败:', err)
       message.error('获取信号失败')
     } finally {
       setLoading(false)

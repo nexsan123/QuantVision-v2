@@ -11,6 +11,7 @@ import type { Position as AlpacaPosition } from '../../services/alpacaTrading'
 
 interface PositionMonitorPanelProps {
   deploymentId: string
+  onSymbolClick?: (symbol: string) => void
 }
 
 interface DisplayPosition {
@@ -54,7 +55,7 @@ function transformPosition(position: AlpacaPosition, totalValue: number): Displa
   }
 }
 
-export default function PositionMonitorPanel({ deploymentId: _deploymentId }: PositionMonitorPanelProps) {
+export default function PositionMonitorPanel({ deploymentId: _deploymentId, onSymbolClick }: PositionMonitorPanelProps) {
   const { positions: alpacaPositions, loading, error, refresh, totalValue, totalPnL, closePosition, closeAllPositions } = usePositions()
   const [sortBy, setSortBy] = useState<'weight' | 'pnl' | 'dayChange'>('weight')
   const [closing, setClosing] = useState<string | null>(null)
@@ -181,6 +182,7 @@ export default function PositionMonitorPanel({ deploymentId: _deploymentId }: Po
               position={position}
               onClose={handleClosePosition}
               closing={closing === position.symbol}
+              onSymbolClick={onSymbolClick}
             />
           ))
         )}
@@ -208,9 +210,10 @@ interface PositionItemProps {
   position: DisplayPosition
   onClose: (symbol: string) => void
   closing: boolean
+  onSymbolClick?: (symbol: string) => void
 }
 
-function PositionItem({ position, onClose, closing }: PositionItemProps) {
+function PositionItem({ position, onClose, closing, onSymbolClick }: PositionItemProps) {
   const isPositivePnl = position.pnl >= 0
   const isPositiveDay = position.dayChange >= 0
 
@@ -219,7 +222,12 @@ function PositionItem({ position, onClose, closing }: PositionItemProps) {
       {/* 第一行: 股票代码 + 当前价格 */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-white">{position.symbol}</span>
+          <button
+            className="text-sm font-medium text-white hover:text-blue-400 transition-colors cursor-pointer"
+            onClick={() => onSymbolClick?.(position.symbol)}
+          >
+            {position.symbol}
+          </button>
           <span className={`text-xs px-1 rounded ${position.side === 'long' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
             {position.side === 'long' ? '多' : '空'}
           </span>

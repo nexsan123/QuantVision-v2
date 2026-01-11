@@ -151,7 +151,7 @@ export default function AlertBell({
     <Dropdown
       open={open}
       onOpenChange={setOpen}
-      dropdownRender={() => dropdownContent}
+      popupRender={() => dropdownContent}
       trigger={['click']}
       placement="bottomRight"
     >

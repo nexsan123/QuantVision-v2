@@ -9,8 +9,8 @@
  * - 右侧 288px: 持仓监控 + 订单管理
  */
 import { useState, useEffect, useCallback, useMemo, memo } from 'react'
-import { Button, Spin, Input } from 'antd'
-import { ExpandOutlined, CompressOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons'
+import { Button, Spin } from 'antd'
+import { ExpandOutlined, CompressOutlined, SettingOutlined } from '@ant-design/icons'
 import EnvironmentSwitch, { TradingEnvironment } from '@/components/common/EnvironmentSwitch'
 import { PanelErrorBoundary } from '@/components/common/ErrorBoundary'
 import DeploymentListPanel from '@/components/TradingMonitor/DeploymentListPanel'
@@ -19,6 +19,7 @@ import PositionMonitorPanel from '@/components/TradingMonitor/PositionMonitorPan
 import OrderPanel from '@/components/TradingMonitor/OrderPanel'
 import { TradingViewChart, TimeframeSelector, IndicatorPanel } from '@/components/Chart'
 import type { TimeFrame, IndicatorConfig } from '@/components/Chart'
+import { StockSearch } from '@/components/Trading/StockSearch'
 import { getDeployments } from '@/services/deploymentService'
 import type { Deployment } from '@/types/deployment'
 
@@ -38,6 +39,7 @@ interface LeftPanelProps {
   strategyId: string
   deploymentId: string
   onToggle: () => void
+  onSymbolSelect: (symbol: string) => void
 }
 
 const LeftPanel = memo(function LeftPanel({
@@ -48,6 +50,7 @@ const LeftPanel = memo(function LeftPanel({
   strategyId,
   deploymentId,
   onToggle,
+  onSymbolSelect,
 }: LeftPanelProps) {
   const width = collapsed ? 48 : 280
 
@@ -81,6 +84,7 @@ const LeftPanel = memo(function LeftPanel({
               <SignalRadarPanel
                 strategyId={strategyId}
                 deploymentId={deploymentId}
+                onSymbolClick={onSymbolSelect}
               />
             </PanelErrorBoundary>
           </div>
@@ -95,12 +99,14 @@ interface RightPanelProps {
   collapsed: boolean
   deploymentId: string
   onToggle: () => void
+  onSymbolSelect: (symbol: string) => void
 }
 
 const RightPanel = memo(function RightPanel({
   collapsed,
   deploymentId,
   onToggle,
+  onSymbolSelect,
 }: RightPanelProps) {
   const width = collapsed ? 48 : 288
 
@@ -122,7 +128,10 @@ const RightPanel = memo(function RightPanel({
         <>
           <div className="h-[55%] border-b border-gray-800 overflow-hidden">
             <PanelErrorBoundary title="持仓监控">
-              <PositionMonitorPanel deploymentId={deploymentId} />
+              <PositionMonitorPanel
+                deploymentId={deploymentId}
+                onSymbolClick={onSymbolSelect}
+              />
             </PanelErrorBoundary>
           </div>
           <div className="flex-1 overflow-hidden">
@@ -274,15 +283,9 @@ export default function Trading() {
           <h1 className="text-lg font-bold text-white">实时交易监控</h1>
 
           {/* 全局搜索框 */}
-          <Input
-            placeholder="搜索股票 (Ctrl+K)"
-            prefix={<SearchOutlined className="text-gray-500" />}
-            className="w-48 focus:w-64 transition-all"
-            size="small"
-            style={{
-              background: '#1a1a3a',
-              borderColor: '#3a3a5a',
-            }}
+          <StockSearch
+            value={currentSymbol}
+            onSelect={handleSymbolChange}
           />
 
           <EnvironmentSwitch
@@ -325,6 +328,7 @@ export default function Trading() {
           strategyId={strategyId}
           deploymentId={deploymentId}
           onToggle={handleLeftToggle}
+          onSymbolSelect={handleSymbolChange}
         />
 
         {/* 中间: 图表区域 */}
@@ -359,6 +363,7 @@ export default function Trading() {
           collapsed={rightCollapsed}
           deploymentId={deploymentId}
           onToggle={handleRightToggle}
+          onSymbolSelect={handleSymbolChange}
         />
       </div>
     </div>

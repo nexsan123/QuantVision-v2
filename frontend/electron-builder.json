@@ -10,35 +10,28 @@
   "files": [
     "dist/**/*",
     "electron/**/*",
+    "backend/**/*",
     "!electron/assets/raw/**"
   ],
+  "asar": false,
   "extraMetadata": {
     "main": "electron/main.cjs"
   },
   "win": {
     "target": [
       {
-        "target": "nsis",
-        "arch": ["x64"]
-      },
-      {
         "target": "portable",
         "arch": ["x64"]
       }
     ],
-    "icon": "electron/assets/icon.ico",
     "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "installerIcon": "electron/assets/icon.ico",
-    "uninstallerIcon": "electron/assets/icon.ico",
-    "installerHeaderIcon": "electron/assets/icon.ico",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "QuantVision",
-    "include": "electron/installer.nsh"
+    "shortcutName": "QuantVision"
   },
   "mac": {
     "target": ["dmg", "zip"],

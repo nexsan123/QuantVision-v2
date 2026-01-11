@@ -86,6 +86,21 @@ async def liveness_probe() -> dict[str, str]:
     return {"status": "alive"}
 
 
+@router.get("/ai/health")
+async def ai_health_check() -> dict[str, Any]:
+    """
+    AI 服务健康检查
+
+    前端使用此端点检查 AI 服务连接状态
+    """
+    return {
+        "status": "healthy",
+        "model": "Claude 4.5 Sonnet",
+        "timestamp": datetime.now().isoformat(),
+        "version": settings.APP_VERSION,
+    }
+
+
 @router.get("/health/ready")
 async def readiness_probe(
     db: DBSession,

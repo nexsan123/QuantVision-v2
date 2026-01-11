@@ -3,14 +3,39 @@
  * 全程陪伴策略构建过程
  */
 import { useState, useRef, useEffect } from 'react'
-import { Input, Button, Spin, Tag, Collapse } from 'antd'
+import { Input, Button, Spin, Tag, Collapse, Select, Tooltip, message } from 'antd'
 import {
   RobotOutlined, SendOutlined, BulbOutlined,
-  QuestionCircleOutlined
+  QuestionCircleOutlined, SettingOutlined, SwapOutlined
 } from '@ant-design/icons'
 import { AIMessage, STRATEGY_STEPS, StrategyConfig } from '@/types/strategy'
 
 const { TextArea } = Input
+
+// AI模型信息
+interface AIModelInfo {
+  id: string
+  name: string
+  provider: string  // "anthropic" | "openai" | "deepseek"
+  description: string
+  max_tokens: number
+  is_recommended: boolean
+  tier: string  // "economy" | "standard" | "premium"
+}
+
+// 平台显示名称
+const PROVIDER_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  deepseek: 'DeepSeek',
+}
+
+// 平台颜色
+const PROVIDER_COLORS: Record<string, string> = {
+  anthropic: '#D97706',  // 橙色
+  openai: '#10B981',     // 绿色
+  deepseek: '#3B82F6',   // 蓝色
+}
 
 interface AIAssistantPanelProps {
   currentStep: number
@@ -118,6 +143,9 @@ ${stepInfo.educationTip}
 // API配置
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
+// 连接状态类型
+type ConnectionStatus = 'checking' | 'connected' | 'offline'
+
 export default function AIAssistantPanel({
   currentStep,
   config,
@@ -127,10 +155,98 @@ export default function AIAssistantPanel({
   const [inputValue, setInputValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [apiError, setApiError] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('checking')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // 模型相关状态
+  const [availableModels, setAvailableModels] = useState<AIModelInfo[]>([])
+  const [currentModelId, setCurrentModelId] = useState<string>('')
+  const [showModelSelector, setShowModelSelector] = useState(false)
+  const [switchingModel, setSwitchingModel] = useState(false)
 
   const stepInfo = STRATEGY_STEPS[currentStep]
   const suggestions = STEP_SUGGESTIONS[currentStep] || []
+
+  // 获取可用模型列表
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/ai-assistant/models`)
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableModels(data.models)
+          setCurrentModelId(data.current_model_id)
+        }
+      } catch (error) {
+        console.error('Failed to fetch models:', error)
+      }
+    }
+    fetchModels()
+  }, [])
+
+  // 切换模型
+  const handleSwitchModel = async (modelId: string) => {
+    setSwitchingModel(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/ai-assistant/models/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_id: modelId })
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentModelId(modelId)
+        message.success(data.message)
+      } else {
+        message.error('模型切换失败')
+      }
+    } catch (error) {
+      console.error('Failed to switch model:', error)
+      message.error('模型切换失败')
+    } finally {
+      setSwitchingModel(false)
+      setShowModelSelector(false)
+    }
+  }
+
+  // 获取当前模型信息
+  const currentModel = availableModels.find(m => m.id === currentModelId)
+
+  // 检查AI助手连接状态
+  useEffect(() => {
+    const checkConnection = async () => {
+      setConnectionStatus('checking')
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/ai-assistant/status`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setConnectionStatus(data.has_api_key ? 'connected' : 'offline')
+          setApiError(false)
+        } else {
+          setConnectionStatus('offline')
+          setApiError(true)
+        }
+      } catch {
+        // 开发模式下模拟连接成功
+        if (import.meta.env.DEV) {
+          setConnectionStatus('connected')
+          setApiError(false)
+        } else {
+          setConnectionStatus('offline')
+          setApiError(true)
+        }
+      }
+    }
+
+    checkConnection()
+    // 每30秒检查一次
+    const interval = setInterval(checkConnection, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   // 调用后端AI助手API
   const callAIAssistant = async (question: string, step: number): Promise<string> => {
@@ -248,15 +364,121 @@ ${stepInfo.educationTip}
             <RobotOutlined className="text-xl text-primary-500" />
             <span className="font-medium">策略助手</span>
           </div>
-          {apiError && (
-            <Tag color="orange" className="text-xs">
-              离线模式
-            </Tag>
-          )}
+          {/* 设置按钮 */}
+          <Tooltip title="模型设置">
+            <Button
+              type="text"
+              size="small"
+              icon={<SettingOutlined />}
+              onClick={() => setShowModelSelector(!showModelSelector)}
+            />
+          </Tooltip>
         </div>
-        <Tag color="blue" className="mt-2">
-          当前: {stepInfo.title}
-        </Tag>
+
+        {/* 模型选择器 */}
+        {showModelSelector && (
+          <div className="mt-3 p-3 bg-dark-hover rounded-lg">
+            <div className="text-xs text-gray-400 mb-2">选择AI模型</div>
+            <Select
+              value={currentModelId}
+              onChange={handleSwitchModel}
+              loading={switchingModel}
+              className="w-full"
+              size="small"
+              optionLabelProp="label"
+            >
+              {/* 按平台分组 */}
+              {['anthropic', 'openai', 'deepseek'].map(provider => {
+                const providerModels = availableModels.filter(m => m.provider === provider)
+                if (providerModels.length === 0) return null
+                return (
+                  <Select.OptGroup
+                    key={provider}
+                    label={
+                      <span style={{ color: PROVIDER_COLORS[provider] }}>
+                        {PROVIDER_NAMES[provider]}
+                      </span>
+                    }
+                  >
+                    {providerModels.map(model => (
+                      <Select.Option
+                        key={model.id}
+                        value={model.id}
+                        label={`${model.name} (${PROVIDER_NAMES[model.provider]})`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>{model.name}</span>
+                          <div className="flex gap-1">
+                            {model.is_recommended && (
+                              <Tag color="success" className="text-xs">推荐</Tag>
+                            )}
+                            <Tag
+                              color={
+                                model.tier === 'premium' ? 'gold' :
+                                model.tier === 'standard' ? 'blue' : 'default'
+                              }
+                              className="text-xs"
+                            >
+                              {model.tier === 'premium' ? '高级' :
+                               model.tier === 'standard' ? '标准' : '经济'}
+                            </Tag>
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500">{model.description}</div>
+                      </Select.Option>
+                    ))}
+                  </Select.OptGroup>
+                )
+              })}
+            </Select>
+            <div className="text-xs text-gray-500 mt-2">
+              提示: 需要在 .env 中配置对应平台的 API Key
+            </div>
+          </div>
+        )}
+
+        {/* 当前模型和连接状态 */}
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-2">
+            <Tag color="blue">{stepInfo.title}</Tag>
+            {currentModel && (
+              <Tooltip title={`${PROVIDER_NAMES[currentModel.provider]}: ${currentModel.description}`}>
+                <Tag
+                  style={{
+                    borderColor: PROVIDER_COLORS[currentModel.provider],
+                    color: PROVIDER_COLORS[currentModel.provider]
+                  }}
+                  className="cursor-pointer"
+                  onClick={() => setShowModelSelector(true)}
+                >
+                  <SwapOutlined className="mr-1" />
+                  {currentModel.name}
+                </Tag>
+              </Tooltip>
+            )}
+          </div>
+          {/* 连接状态指示器 */}
+          <div className="flex items-center gap-1">
+            {connectionStatus === 'checking' && (
+              <Tag color="processing" className="text-xs">
+                <Spin size="small" className="mr-1" />
+                检测中
+              </Tag>
+            )}
+            {connectionStatus === 'connected' && !apiError && (
+              <Tag color="success" className="text-xs">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1 animate-pulse" />
+                已连接
+              </Tag>
+            )}
+            {(connectionStatus === 'offline' || apiError) && (
+              <Tag color="warning" className="text-xs">
+                <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 mr-1" />
+                离线模式
+              </Tag>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* 消息区域 */}

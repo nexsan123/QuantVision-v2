@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
+  // === 后端服务管理 ===
+  backend: {
+    getStatus: () => ipcRenderer.invoke('backend:status'),
+    restart: () => ipcRenderer.invoke('backend:restart'),
+  },
+
   // === 事件监听 ===
   on: (channel, callback) => {
     const validChannels = [

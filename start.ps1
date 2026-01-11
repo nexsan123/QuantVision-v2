@@ -125,7 +125,7 @@ function Show-Banner {
     Write-Host "    Q   Q Q  U   U  A     A  N  NN     T                     " -ForegroundColor Magenta
     Write-Host "     QQQQQ Q  UUU   A     A  N   N     T                     " -ForegroundColor Magenta
     Write-Host "                                                              " -ForegroundColor Magenta
-    Write-Host "              QuantVision v2.0 Launcher                       " -ForegroundColor Cyan
+    Write-Host "              QuantVision v2.1 Launcher" -ForegroundColor Cyan
     Write-Host "                                                              " -ForegroundColor Magenta
     Write-Host "==============================================================" -ForegroundColor Magenta
     Write-Host ""

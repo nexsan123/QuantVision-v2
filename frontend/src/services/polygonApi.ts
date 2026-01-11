@@ -425,5 +425,31 @@ class PolygonApiService {
 // 默认实例
 export const polygonApi = new PolygonApiService()
 
+// 简化的股票信息类型
+export interface SymbolInfo {
+  symbol: string
+  name: string
+  type: string
+  market?: string
+}
+
+/**
+ * 搜索股票（简化接口）
+ */
+export async function searchSymbols(query: string, limit = 10): Promise<SymbolInfo[]> {
+  try {
+    const results = await polygonApi.searchTickers(query, { limit })
+    return results.map(r => ({
+      symbol: r.ticker,
+      name: r.name,
+      type: r.type?.toLowerCase() || 'stock',
+      market: r.market,
+    }))
+  } catch (error) {
+    console.error('Search symbols failed:', error)
+    return []
+  }
+}
+
 // 导出类以支持自定义实例
 export default PolygonApiService

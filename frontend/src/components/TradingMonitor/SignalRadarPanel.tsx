@@ -9,27 +9,21 @@
  * - 🟡 接近信号
  * - ⚪ 监控中
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Tooltip, Badge } from 'antd'
 import { SyncOutlined } from '@ant-design/icons'
+import { getSimpleSignals, type SimpleSignal } from '../../services/signalRadarService'
 
 interface SignalRadarPanelProps {
   strategyId: string
   deploymentId: string
+  onSymbolClick?: (symbol: string) => void
 }
 
 // 信号状态类型
 type SignalStatus = 'holding' | 'buy' | 'sell' | 'approaching' | 'watching'
 
-interface SignalItem {
-  symbol: string
-  status: SignalStatus
-  price: number
-  change: number
-  changePct: number
-  signalStrength?: number // 信号强度 0-100
-  message?: string
-}
+type SignalItem = SimpleSignal
 
 // 状态配置
 const STATUS_CONFIG: Record<SignalStatus, { icon: string; label: string; color: string }> = {
@@ -40,34 +34,39 @@ const STATUS_CONFIG: Record<SignalStatus, { icon: string; label: string; color: 
   watching: { icon: '⚪', label: '监控中', color: 'text-gray-400' },
 }
 
-// 模拟信号数据
-const mockSignals: SignalItem[] = [
-  { symbol: 'AAPL', status: 'holding', price: 178.52, change: 2.35, changePct: 0.0133, signalStrength: 85 },
-  { symbol: 'NVDA', status: 'buy', price: 475.50, change: 12.80, changePct: 0.0277, signalStrength: 92, message: 'RSI超卖反弹' },
-  { symbol: 'TSLA', status: 'sell', price: 245.30, change: -8.20, changePct: -0.0323, signalStrength: 78, message: '突破止损线' },
-  { symbol: 'MSFT', status: 'approaching', price: 372.15, change: 1.85, changePct: 0.0050, signalStrength: 65, message: '接近买入点' },
-  { symbol: 'GOOGL', status: 'watching', price: 141.23, change: 0.45, changePct: 0.0032 },
-  { symbol: 'META', status: 'watching', price: 325.80, change: -1.20, changePct: -0.0037 },
-  { symbol: 'AMZN', status: 'holding', price: 185.60, change: 3.40, changePct: 0.0187, signalStrength: 70 },
-  { symbol: 'AMD', status: 'approaching', price: 145.20, change: 4.50, changePct: 0.0320, signalStrength: 58, message: '动量增强中' },
-]
-
-export default function SignalRadarPanel({ strategyId, deploymentId }: SignalRadarPanelProps) {
+export default function SignalRadarPanel({ strategyId, deploymentId, onSymbolClick }: SignalRadarPanelProps) {
   const [signals, setSignals] = useState<SignalItem[]>([])
   const [filter, setFilter] = useState<SignalStatus | 'all'>('all')
   const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    // 模拟加载信号数据
-    setSignals(mockSignals)
+  const fetchSignals = useCallback(async () => {
+    if (!strategyId) return
+
+    setRefreshing(true)
+    try {
+      const data = await getSimpleSignals(strategyId, deploymentId)
+      setSignals(data)
+    } catch (err) {
+      console.error('Failed to fetch signals:', err)
+    } finally {
+      setRefreshing(false)
+    }
   }, [strategyId, deploymentId])
 
-  const handleRefresh = () => {
+  useEffect(() => {
+    fetchSignals()
+  }, [fetchSignals])
+
+  // 自动刷新 30秒
+  useEffect(() => {
+    const interval = setInterval(fetchSignals, 30000)
+    return () => clearInterval(interval)
+  }, [fetchSignals])
+
+  const handleRefresh = async () => {
     setRefreshing(true)
-    setTimeout(() => {
-      setSignals([...mockSignals].sort(() => Math.random() - 0.5))
-      setRefreshing(false)
-    }, 500)
+    await fetchSignals()
+    setRefreshing(false)
   }
 
   // 按状态筛选
@@ -123,7 +122,7 @@ export default function SignalRadarPanel({ strategyId, deploymentId }: SignalRad
         ) : (
           <div className="py-1">
             {filteredSignals.map(signal => (
-              <SignalItem key={signal.symbol} signal={signal} />
+              <SignalItem key={signal.symbol} signal={signal} onSymbolClick={onSymbolClick} />
             ))}
           </div>
         )}
@@ -166,18 +165,21 @@ function FilterChip({
   )
 }
 
-function SignalItem({ signal }: { signal: SignalItem }) {
+function SignalItem({ signal, onSymbolClick }: { signal: SignalItem; onSymbolClick?: (symbol: string) => void }) {
   const config = STATUS_CONFIG[signal.status]
   const isPositive = signal.change >= 0
 
   return (
     <Tooltip title={signal.message} placement="right">
-      <div className="px-3 py-2 hover:bg-gray-800/50 cursor-pointer transition-colors border-b border-gray-800/50">
+      <div
+        className="px-3 py-2 hover:bg-gray-800/50 cursor-pointer transition-colors border-b border-gray-800/50"
+        onClick={() => onSymbolClick?.(signal.symbol)}
+      >
         {/* 第一行: 状态 + 股票代码 + 价格 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm">{config.icon}</span>
-            <span className="text-sm font-medium text-white">{signal.symbol}</span>
+            <span className="text-sm font-medium text-white hover:text-blue-400">{signal.symbol}</span>
             {signal.signalStrength && signal.status !== 'watching' && (
               <Badge
                 count={signal.signalStrength}

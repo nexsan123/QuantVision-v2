@@ -13,6 +13,14 @@
 from app.models.base import SoftDeleteMixin, TimestampMixin, UUIDMixin
 from app.models.audit_log import AuditLog, AuditActionType, log_audit_event
 from app.models.data_lineage import DataLineage
+from app.models.deployment import (
+    Deployment,
+    IntradayTrade,
+    PDTStatus,
+    DeploymentStatusEnum,
+    DeploymentEnvironmentEnum,
+    StrategyTypeEnum,
+)
 from app.models.financial_data import FinancialStatement
 from app.models.market_data import MacroData, StockOHLCV
 from app.models.strategy_v2 import StrategyStatusEnum, StrategyV2
@@ -37,6 +45,13 @@ __all__ = [
     # 策略V2
     "StrategyV2",
     "StrategyStatusEnum",
+    # 部署和交易
+    "Deployment",
+    "IntradayTrade",
+    "PDTStatus",
+    "DeploymentStatusEnum",
+    "DeploymentEnvironmentEnum",
+    "StrategyTypeEnum",
     # 审计日志
     "AuditLog",
     "AuditActionType",

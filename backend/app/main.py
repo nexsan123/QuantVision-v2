@@ -119,7 +119,7 @@ def register_routes(app: FastAPI) -> None:
     所有 v1 版本的路由都挂载在 /api/v1 前缀下
     WebSocket 路由挂载在根路径
     """
-    from app.api.v1 import ai_assistant, advanced_backtest, alerts, attribution, auth, backtests, conflict, deployment, drift, execution, factor_validation, factors, health, logs, metrics, notifications, manual_trade, market_data, pdt, positions, pre_market, realtime, replay, risk, risk_advanced, signal_radar, strategy, strategy_v2, templates, trade_attribution, trading, trading_cost, validation
+    from app.api.v1 import account, ai_assistant, advanced_backtest, alerts, attribution, auth, backtests, conflict, deployment, drift, execution, factor_validation, factors, health, logs, metrics, notifications, manual_trade, market_data, pdt, positions, pre_market, realtime, replay, risk, risk_advanced, signal_radar, strategy, strategy_v2, templates, trade_attribution, trading, trading_cost, validation
     from app.websocket import trading_router, alpaca_router
 
     # WebSocket 路由 (根路径)
@@ -144,6 +144,12 @@ def register_routes(app: FastAPI) -> None:
         auth.router,
         prefix=settings.API_V1_PREFIX,
         tags=["认证"],
+    )
+    # 账户总览 API
+    app.include_router(
+        account.router,
+        prefix=settings.API_V1_PREFIX,
+        tags=["账户"],
     )
     app.include_router(
         factors.router,

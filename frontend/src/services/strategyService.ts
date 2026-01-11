@@ -1,6 +1,8 @@
 /**
- * 策略服务 - API 调用 + localStorage 持久化
- * Sprint 1 - F2: 策略数据持久化
+ * 策略服务 - API 调用 + localStorage 缓存
+ *
+ * 数据源: 后端 API (PostgreSQL)
+ * 本地存储用于缓存，提升用户体验
  */
 
 import { apiGet, apiPost, apiPut, apiDelete } from './api'
@@ -15,10 +17,25 @@ import type {
   BacktestSummary,
 } from '../types/strategy'
 
-// 是否使用 Mock 数据 (设置为 false 连接真实后端 API)
-const USE_MOCK = false
+// ==================== 数据源状态 ====================
 
-// ==================== 默认策略数据 ====================
+export interface StrategyDataSource {
+  source: 'api' | 'cache' | 'default'
+  is_mock: boolean
+  error_message?: string
+  last_sync?: string
+}
+
+let currentDataSource: StrategyDataSource = {
+  source: 'api',
+  is_mock: false,
+}
+
+export function getStrategyDataSource(): StrategyDataSource {
+  return currentDataSource
+}
+
+// ==================== 默认策略数据 (仅用于演示/降级) ====================
 
 const DEFAULT_STRATEGIES: Strategy[] = [
   {
@@ -106,233 +123,162 @@ const DEFAULT_STRATEGIES: Strategy[] = [
       completedAt: '2024-12-10T15:00:00Z',
     },
   },
-  {
-    id: 'stg-004',
-    name: '多因子选股策略',
-    description: '综合动量、价值、质量因子的多因子策略',
-    status: 'backtest',
-    source: 'custom',
-    config: {
-      name: '多因子选股策略',
-      description: '综合动量、价值、质量因子的多因子策略',
-      status: 'backtest',
-    } as StrategyConfig,
-    deploymentCount: 0,
-    createdBy: 'user-001',
-    createdAt: '2024-12-18T16:00:00Z',
-    updatedAt: '2024-12-20T10:00:00Z',
-    tags: ['多因子'],
-    isFavorite: false,
-  },
 ]
 
-// ==================== 初始化 localStorage ====================
+// ==================== 缓存管理 ====================
 
-function ensureInitialized(): void {
-  if (!strategyStorage.isInitialized() || strategyStorage.getAll().length === 0) {
-    strategyStorage.save(DEFAULT_STRATEGIES)
-    console.log('[StrategyService] Initialized with default strategies')
-  }
-}
-
-// ==================== Mock 实现 (使用 localStorage) ====================
-
-async function mockDelay(ms: number = 300): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-async function mockGetStrategies(params: StrategyFilterParams): Promise<StrategyListResponse> {
-  await mockDelay()
-  ensureInitialized()
-
-  let filtered = [...strategyStorage.getAll()]
-
-  if (params.status) {
-    filtered = filtered.filter(s => s.status === params.status)
-  }
-  if (params.source) {
-    filtered = filtered.filter(s => s.source === params.source)
-  }
-  if (params.isFavorite !== undefined) {
-    filtered = filtered.filter(s => s.isFavorite === params.isFavorite)
-  }
-  if (params.search) {
-    const search = params.search.toLowerCase()
-    filtered = filtered.filter(
-      s =>
-        s.name.toLowerCase().includes(search) ||
-        s.description.toLowerCase().includes(search)
-    )
-  }
-  if (params.tags && params.tags.length > 0) {
-    filtered = filtered.filter(s =>
-      params.tags!.some(tag => s.tags?.includes(tag))
-    )
-  }
-
-  // 排序
-  const sortBy = params.sortBy || 'updatedAt'
-  const sortOrder = params.sortOrder || 'desc'
-  filtered.sort((a, b) => {
-    let aVal: string | number = a[sortBy as keyof Strategy] as string | number
-    let bVal: string | number = b[sortBy as keyof Strategy] as string | number
-
-    if (sortBy === 'lastBacktest') {
-      aVal = a.lastBacktest?.completedAt || ''
-      bVal = b.lastBacktest?.completedAt || ''
-    }
-
-    if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1
-    return 0
-  })
-
-  // 分页
-  const page = params.page || 1
-  const pageSize = params.pageSize || 10
-  const start = (page - 1) * pageSize
-  const items = filtered.slice(start, start + pageSize)
-
-  return {
-    total: filtered.length,
-    items,
-  }
-}
-
-async function mockGetStrategy(id: string): Promise<Strategy | null> {
-  await mockDelay()
-  ensureInitialized()
-  return strategyStorage.getById(id)
-}
-
-async function mockCreateStrategy(data: StrategyCreateRequest): Promise<Strategy> {
-  await mockDelay()
-  ensureInitialized()
-
-  const newStrategy: Strategy = {
-    id: `stg-${Date.now()}`,
-    name: data.name,
-    description: data.description || '',
-    status: 'draft',
-    source: data.source || 'custom',
-    templateId: data.templateId,
-    config: data.config as StrategyConfig,
-    deploymentCount: 0,
-    createdBy: 'user-001',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    tags: data.tags,
-    isFavorite: false,
-  }
-
-  // 保存到 localStorage
-  const strategies = strategyStorage.getAll()
-  strategies.unshift(newStrategy)
+function updateCache(strategies: Strategy[]): void {
   strategyStorage.save(strategies)
-
-  return newStrategy
 }
 
-async function mockUpdateStrategy(id: string, data: StrategyUpdateRequest): Promise<Strategy> {
-  await mockDelay()
-  ensureInitialized()
-
-  const strategies = strategyStorage.getAll()
-  const index = strategies.findIndex(s => s.id === id)
-  if (index === -1) {
-    throw new Error('策略不存在')
+function getFromCache(): Strategy[] {
+  if (!strategyStorage.isInitialized()) {
+    return []
   }
-
-  const updated: Strategy = {
-    ...strategies[index],
-    ...data,
-    config: data.config
-      ? { ...strategies[index].config, ...data.config }
-      : strategies[index].config,
-    updatedAt: new Date().toISOString(),
-  }
-
-  strategies[index] = updated
-  strategyStorage.save(strategies)
-  return updated
+  return strategyStorage.getAll()
 }
 
-async function mockDeleteStrategy(id: string): Promise<void> {
-  await mockDelay()
-  ensureInitialized()
-  strategyStorage.delete(id)
-}
-
-async function mockUpdateBacktestResult(id: string, result: BacktestSummary): Promise<Strategy> {
-  await mockDelay()
-  ensureInitialized()
-
-  const strategies = strategyStorage.getAll()
-  const index = strategies.findIndex(s => s.id === id)
-  if (index === -1) {
-    throw new Error('策略不存在')
-  }
-
-  strategies[index] = {
-    ...strategies[index],
-    lastBacktest: result,
-    updatedAt: new Date().toISOString(),
-  }
-
-  strategyStorage.save(strategies)
-  return strategies[index]
-}
-
-// ==================== 公开 API ====================
+// ==================== API 调用 ====================
 
 /**
  * 获取策略列表
  */
 export async function getStrategies(params: StrategyFilterParams = {}): Promise<StrategyListResponse> {
-  if (USE_MOCK) {
-    return mockGetStrategies(params)
+  try {
+    const response = await apiGet<{ total: number; strategies: Strategy[] }>(
+      "/api/v1/strategies/v2/",
+      params as Record<string, string | number | boolean | undefined>
+    )
+
+    const result = {
+      total: response.total,
+      items: response.strategies || [],
+    }
+
+    // 更新缓存
+    if (result.items.length > 0) {
+      updateCache(result.items)
+    }
+
+    currentDataSource = {
+      source: 'api',
+      is_mock: false,
+      last_sync: new Date().toISOString(),
+    }
+
+    return result
+  } catch (error) {
+    console.warn('[StrategyService] API failed, using cache/default:', error)
+
+    // 尝试从缓存获取
+    const cached = getFromCache()
+    if (cached.length > 0) {
+      currentDataSource = {
+        source: 'cache',
+        is_mock: true,
+        error_message: 'Using cached data - API unavailable',
+        last_sync: strategyStorage.getLastSync() || undefined,
+      }
+      return { total: cached.length, items: cached }
+    }
+
+    // 使用默认数据
+    currentDataSource = {
+      source: 'default',
+      is_mock: true,
+      error_message: 'Using default demo data - API unavailable',
+    }
+    return { total: DEFAULT_STRATEGIES.length, items: DEFAULT_STRATEGIES }
   }
-  return apiGet<StrategyListResponse>('/api/v1/strategies/v2/', params as Record<string, string | number | boolean | undefined>)
 }
 
 /**
  * 获取单个策略
  */
 export async function getStrategy(id: string): Promise<Strategy | null> {
-  if (USE_MOCK) {
-    return mockGetStrategy(id)
+  try {
+    const strategy = await apiGet<Strategy>(`/api/v1/strategies/v2/${id}`)
+    currentDataSource = { source: 'api', is_mock: false }
+    return strategy
+  } catch (error) {
+    console.warn(`[StrategyService] Failed to get strategy ${id}:`, error)
+
+    // 从缓存查找
+    const cached = getFromCache()
+    const found = cached.find(s => s.id === id)
+    if (found) {
+      currentDataSource = { source: 'cache', is_mock: true }
+      return found
+    }
+
+    // 从默认数据查找
+    const defaultFound = DEFAULT_STRATEGIES.find(s => s.id === id)
+    if (defaultFound) {
+      currentDataSource = { source: 'default', is_mock: true }
+      return defaultFound
+    }
+
+    return null
   }
-  return apiGet<Strategy>(`/api/v1/strategies/v2/${id}`)
 }
 
 /**
  * 创建策略
  */
 export async function createStrategy(data: StrategyCreateRequest): Promise<Strategy> {
-  if (USE_MOCK) {
-    return mockCreateStrategy(data)
+  try {
+    const strategy = await apiPost<Strategy>('/api/v1/strategies/v2/', data)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    const cached = getFromCache()
+    cached.unshift(strategy)
+    updateCache(cached)
+
+    return strategy
+  } catch (error) {
+    console.error('[StrategyService] Failed to create strategy:', error)
+    throw new Error('无法创建策略，请检查网络连接')
   }
-  return apiPost<Strategy>('/api/v1/strategies/v2/', data)
 }
 
 /**
  * 更新策略
  */
 export async function updateStrategy(id: string, data: StrategyUpdateRequest): Promise<Strategy> {
-  if (USE_MOCK) {
-    return mockUpdateStrategy(id, data)
+  try {
+    const strategy = await apiPut<Strategy>(`/api/v1/strategies/v2/${id}`, data)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    const cached = getFromCache()
+    const index = cached.findIndex(s => s.id === id)
+    if (index !== -1) {
+      cached[index] = strategy
+      updateCache(cached)
+    }
+
+    return strategy
+  } catch (error) {
+    console.error('[StrategyService] Failed to update strategy:', error)
+    throw new Error('无法更新策略，请检查网络连接')
   }
-  return apiPut<Strategy>(`/api/v1/strategies/v2/${id}`, data)
 }
 
 /**
  * 删除策略
  */
 export async function deleteStrategy(id: string): Promise<void> {
-  if (USE_MOCK) {
-    return mockDeleteStrategy(id)
+  try {
+    await apiDelete(`/api/v1/strategies/v2/${id}`)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    strategyStorage.delete(id)
+  } catch (error) {
+    console.error('[StrategyService] Failed to delete strategy:', error)
+    throw new Error('无法删除策略，请检查网络连接')
   }
-  return apiDelete(`/api/v1/strategies/v2/${id}`)
 }
 
 /**
@@ -350,10 +296,14 @@ export async function toggleFavorite(id: string): Promise<Strategy> {
  * 更新回测结果
  */
 export async function updateBacktestResult(id: string, result: BacktestSummary): Promise<Strategy> {
-  if (USE_MOCK) {
-    return mockUpdateBacktestResult(id, result)
+  try {
+    const strategy = await apiPost<Strategy>(`/api/v1/strategies/v2/${id}/backtest-result`, result)
+    currentDataSource = { source: 'api', is_mock: false }
+    return strategy
+  } catch (error) {
+    console.error('[StrategyService] Failed to update backtest result:', error)
+    throw new Error('无法更新回测结果')
   }
-  return apiPost<Strategy>(`/api/v1/strategies/v2/${id}/backtest-result`, result)
 }
 
 /**

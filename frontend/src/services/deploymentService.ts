@@ -1,6 +1,8 @@
 /**
- * 部署服务 - API 调用 + localStorage 持久化
- * Sprint 1 - F3: 部署数据持久化
+ * 部署服务 - API 调用 + localStorage 缓存
+ *
+ * 数据源: 后端 API (PostgreSQL)
+ * 本地存储用于缓存，提升用户体验
  */
 
 import { apiGet, apiPost, apiPut, apiDelete } from './api'
@@ -14,10 +16,25 @@ import type {
   DeploymentEnvironment,
 } from '../types/deployment'
 
-// 是否使用 Mock 数据 (设置为 false 连接真实后端 API)
-const USE_MOCK = false
+// ==================== 数据源状态 ====================
 
-// ==================== 默认部署数据 ====================
+export interface DeploymentDataSource {
+  source: 'api' | 'cache' | 'default'
+  is_mock: boolean
+  error_message?: string
+  last_sync?: string
+}
+
+let currentDataSource: DeploymentDataSource = {
+  source: 'api',
+  is_mock: false,
+}
+
+export function getDeploymentDataSource(): DeploymentDataSource {
+  return currentDataSource
+}
+
+// ==================== 默认部署数据 (仅用于演示/降级) ====================
 
 const DEFAULT_DEPLOYMENTS: Deployment[] = [
   {
@@ -94,59 +111,22 @@ const DEFAULT_DEPLOYMENTS: Deployment[] = [
     updatedAt: '2024-12-20T10:00:00Z',
     startedAt: '2024-11-01T10:30:00Z',
   },
-  {
-    deploymentId: 'dep-003',
-    strategyId: 'stg-003',
-    strategyName: '均值回归策略',
-    deploymentName: '均值回归-模拟盘',
-    environment: 'paper',
-    status: 'paused',
-    strategyType: 'medium_term',
-    config: {
-      strategyId: 'stg-003',
-      deploymentName: '均值回归-模拟盘',
-      environment: 'paper',
-      strategyType: 'medium_term',
-      universeConfig: { mode: 'full', maxPositions: 20 },
-      executionMode: 'auto',
-      riskParams: {
-        stopLoss: -0.06,
-        takeProfit: 0.12,
-        maxPositionPct: 0.10,
-        maxDrawdown: -0.15,
-      },
-      capitalConfig: {
-        totalCapital: 50000,
-        initialPositionPct: 0.80,
-        reserveCashPct: 0.20,
-      },
-      rebalanceFrequency: 'weekly',
-      rebalanceTime: '09:30',
-    },
-    currentPnl: 1250.00,
-    currentPnlPct: 0.025,
-    totalTrades: 18,
-    winRate: 0.56,
-    createdAt: '2024-12-01T09:00:00Z',
-    updatedAt: '2024-12-15T14:00:00Z',
-    startedAt: '2024-12-01T09:30:00Z',
-  },
 ]
 
-// ==================== 初始化 localStorage ====================
+// ==================== 缓存管理 ====================
 
-function ensureInitialized(): void {
-  if (!deploymentStorage.isInitialized() || deploymentStorage.getAll().length === 0) {
-    deploymentStorage.save(DEFAULT_DEPLOYMENTS)
-    console.log('[DeploymentService] Initialized with default deployments')
+function updateCache(deployments: Deployment[]): void {
+  deploymentStorage.save(deployments)
+}
+
+function getFromCache(): Deployment[] {
+  if (!deploymentStorage.isInitialized()) {
+    return []
   }
+  return deploymentStorage.getAll()
 }
 
-// ==================== Mock 实现 (使用 localStorage) ====================
-
-async function mockDelay(ms: number = 300): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
+// ==================== 筛选参数接口 ====================
 
 interface DeploymentFilterParams {
   strategyId?: string
@@ -156,178 +136,101 @@ interface DeploymentFilterParams {
   pageSize?: number
 }
 
-async function mockGetDeployments(params: DeploymentFilterParams = {}): Promise<DeploymentListResponse> {
-  await mockDelay()
-  ensureInitialized()
-
-  let filtered = [...deploymentStorage.getAll()]
-
-  if (params.strategyId) {
-    filtered = filtered.filter(d => d.strategyId === params.strategyId)
-  }
-  if (params.environment) {
-    filtered = filtered.filter(d => d.environment === params.environment)
-  }
-  if (params.status) {
-    filtered = filtered.filter(d => d.status === params.status)
-  }
-
-  // 按更新时间排序
-  filtered.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-
-  // 分页
-  const page = params.page || 1
-  const pageSize = params.pageSize || 10
-  const start = (page - 1) * pageSize
-  const items = filtered.slice(start, start + pageSize)
-
-  return {
-    total: filtered.length,
-    items,
-  }
-}
-
-async function mockGetDeployment(id: string): Promise<Deployment | null> {
-  await mockDelay()
-  ensureInitialized()
-  return deploymentStorage.getById(id)
-}
-
-async function mockGetDeploymentsByStrategy(strategyId: string): Promise<Deployment[]> {
-  await mockDelay()
-  ensureInitialized()
-  return deploymentStorage.getByStrategyId(strategyId)
-}
-
-async function mockCreateDeployment(data: DeploymentCreateRequest): Promise<Deployment> {
-  await mockDelay()
-  ensureInitialized()
-
-  const newDeployment: Deployment = {
-    deploymentId: `dep-${Date.now()}`,
-    strategyId: data.config.strategyId,
-    strategyName: '', // 需要从策略服务获取
-    deploymentName: data.config.deploymentName,
-    environment: data.config.environment,
-    status: data.autoStart ? 'running' : 'draft',
-    strategyType: data.config.strategyType,
-    config: data.config,
-    currentPnl: 0,
-    currentPnlPct: 0,
-    totalTrades: 0,
-    winRate: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    startedAt: data.autoStart ? new Date().toISOString() : undefined,
-  }
-
-  deploymentStorage.add(newDeployment)
-  return newDeployment
-}
-
-async function mockUpdateDeployment(id: string, data: DeploymentUpdateRequest): Promise<Deployment> {
-  await mockDelay()
-  ensureInitialized()
-
-  const deployment = deploymentStorage.getById(id)
-  if (!deployment) {
-    throw new Error('部署不存在')
-  }
-
-  const updated = deploymentStorage.update(id, {
-    ...data,
-    config: {
-      ...deployment.config,
-      ...(data.deploymentName && { deploymentName: data.deploymentName }),
-      ...(data.riskParams && { riskParams: data.riskParams }),
-      ...(data.capitalConfig && { capitalConfig: data.capitalConfig }),
-      ...(data.rebalanceFrequency && { rebalanceFrequency: data.rebalanceFrequency }),
-      ...(data.rebalanceTime && { rebalanceTime: data.rebalanceTime }),
-    },
-  })
-
-  if (!updated) {
-    throw new Error('更新失败')
-  }
-
-  return updated
-}
-
-async function mockDeleteDeployment(id: string): Promise<void> {
-  await mockDelay()
-  ensureInitialized()
-  deploymentStorage.delete(id)
-}
-
-async function mockUpdateDeploymentStatus(id: string, status: DeploymentStatus): Promise<Deployment> {
-  await mockDelay()
-  ensureInitialized()
-
-  const updates: Partial<Deployment> = { status }
-  if (status === 'running') {
-    updates.startedAt = new Date().toISOString()
-  }
-
-  const updated = deploymentStorage.update(id, updates)
-  if (!updated) {
-    throw new Error('部署不存在')
-  }
-
-  return updated
-}
-
-async function mockSwitchEnvironment(id: string, environment: DeploymentEnvironment): Promise<Deployment> {
-  await mockDelay()
-  ensureInitialized()
-
-  const deployment = deploymentStorage.getById(id)
-  if (!deployment) {
-    throw new Error('部署不存在')
-  }
-
-  const updated = deploymentStorage.update(id, {
-    environment,
-    status: 'draft', // 切换环境后需要重新启动
-    config: { ...deployment.config, environment },
-  })
-
-  if (!updated) {
-    throw new Error('更新失败')
-  }
-
-  return updated
-}
-
-// ==================== 公开 API ====================
+// ==================== API 调用 ====================
 
 /**
  * 获取部署列表
  */
 export async function getDeployments(params: DeploymentFilterParams = {}): Promise<DeploymentListResponse> {
-  if (USE_MOCK) {
-    return mockGetDeployments(params)
+  try {
+    const response = await apiGet<DeploymentListResponse>(
+      '/api/v1/deployments',
+      params as Record<string, string | number | boolean | undefined>
+    )
+
+    // 更新缓存
+    if (response.items && response.items.length > 0) {
+      updateCache(response.items)
+    }
+
+    currentDataSource = {
+      source: 'api',
+      is_mock: false,
+      last_sync: new Date().toISOString(),
+    }
+
+    return response
+  } catch (error) {
+    console.warn('[DeploymentService] API failed, using cache/default:', error)
+
+    // 尝试从缓存获取
+    const cached = getFromCache()
+    if (cached.length > 0) {
+      // 应用过滤
+      let filtered = [...cached]
+      if (params.strategyId) {
+        filtered = filtered.filter(d => d.strategyId === params.strategyId)
+      }
+      if (params.environment) {
+        filtered = filtered.filter(d => d.environment === params.environment)
+      }
+      if (params.status) {
+        filtered = filtered.filter(d => d.status === params.status)
+      }
+
+      currentDataSource = {
+        source: 'cache',
+        is_mock: true,
+        error_message: 'Using cached data - API unavailable',
+      }
+      return { total: filtered.length, items: filtered }
+    }
+
+    // 使用默认数据
+    currentDataSource = {
+      source: 'default',
+      is_mock: true,
+      error_message: 'Using default demo data - API unavailable',
+    }
+    return { total: DEFAULT_DEPLOYMENTS.length, items: DEFAULT_DEPLOYMENTS }
   }
-  return apiGet<DeploymentListResponse>('/api/v1/deployments', params as Record<string, string | number | boolean | undefined>)
 }
 
 /**
  * 获取单个部署
  */
 export async function getDeployment(id: string): Promise<Deployment | null> {
-  if (USE_MOCK) {
-    return mockGetDeployment(id)
+  try {
+    const deployment = await apiGet<Deployment>(`/api/v1/deployments/${id}`)
+    currentDataSource = { source: 'api', is_mock: false }
+    return deployment
+  } catch (error) {
+    console.warn(`[DeploymentService] Failed to get deployment ${id}:`, error)
+
+    // 从缓存查找
+    const cached = getFromCache()
+    const found = cached.find(d => d.deploymentId === id)
+    if (found) {
+      currentDataSource = { source: 'cache', is_mock: true }
+      return found
+    }
+
+    // 从默认数据查找
+    const defaultFound = DEFAULT_DEPLOYMENTS.find(d => d.deploymentId === id)
+    if (defaultFound) {
+      currentDataSource = { source: 'default', is_mock: true }
+      return defaultFound
+    }
+
+    return null
   }
-  return apiGet<Deployment>(`/api/v1/deployments/${id}`)
 }
 
 /**
  * 按策略ID获取部署列表
  */
 export async function getDeploymentsByStrategy(strategyId: string): Promise<Deployment[]> {
-  if (USE_MOCK) {
-    return mockGetDeploymentsByStrategy(strategyId)
-  }
-  const response = await apiGet<DeploymentListResponse>('/api/v1/deployments', { strategyId })
+  const response = await getDeployments({ strategyId })
   return response.items
 }
 
@@ -335,70 +238,115 @@ export async function getDeploymentsByStrategy(strategyId: string): Promise<Depl
  * 创建部署
  */
 export async function createDeployment(data: DeploymentCreateRequest): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockCreateDeployment(data)
+  try {
+    const deployment = await apiPost<Deployment>('/api/v1/deployments', data)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    const cached = getFromCache()
+    cached.unshift(deployment)
+    updateCache(cached)
+
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to create deployment:', error)
+    throw new Error('无法创建部署，请检查网络连接')
   }
-  return apiPost<Deployment>('/api/v1/deployments', data)
 }
 
 /**
  * 更新部署
  */
 export async function updateDeployment(id: string, data: DeploymentUpdateRequest): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockUpdateDeployment(id, data)
+  try {
+    const deployment = await apiPut<Deployment>(`/api/v1/deployments/${id}`, data)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    const cached = getFromCache()
+    const index = cached.findIndex(d => d.deploymentId === id)
+    if (index !== -1) {
+      cached[index] = deployment
+      updateCache(cached)
+    }
+
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to update deployment:', error)
+    throw new Error('无法更新部署，请检查网络连接')
   }
-  return apiPut<Deployment>(`/api/v1/deployments/${id}`, data)
 }
 
 /**
  * 删除部署
  */
 export async function deleteDeployment(id: string): Promise<void> {
-  if (USE_MOCK) {
-    return mockDeleteDeployment(id)
+  try {
+    await apiDelete(`/api/v1/deployments/${id}`)
+    currentDataSource = { source: 'api', is_mock: false }
+
+    // 更新缓存
+    deploymentStorage.delete(id)
+  } catch (error) {
+    console.error('[DeploymentService] Failed to delete deployment:', error)
+    throw new Error('无法删除部署，请检查网络连接')
   }
-  return apiDelete(`/api/v1/deployments/${id}`)
 }
 
 /**
  * 启动部署
  */
 export async function startDeployment(id: string): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockUpdateDeploymentStatus(id, 'running')
+  try {
+    const deployment = await apiPost<Deployment>(`/api/v1/deployments/${id}/start`, {})
+    currentDataSource = { source: 'api', is_mock: false }
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to start deployment:', error)
+    throw new Error('无法启动部署')
   }
-  return apiPost<Deployment>(`/api/v1/deployments/${id}/start`, {})
 }
 
 /**
  * 暂停部署
  */
 export async function pauseDeployment(id: string): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockUpdateDeploymentStatus(id, 'paused')
+  try {
+    const deployment = await apiPost<Deployment>(`/api/v1/deployments/${id}/pause`, {})
+    currentDataSource = { source: 'api', is_mock: false }
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to pause deployment:', error)
+    throw new Error('无法暂停部署')
   }
-  return apiPost<Deployment>(`/api/v1/deployments/${id}/pause`, {})
 }
 
 /**
  * 停止部署
  */
 export async function stopDeployment(id: string): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockUpdateDeploymentStatus(id, 'stopped')
+  try {
+    const deployment = await apiPost<Deployment>(`/api/v1/deployments/${id}/stop`, {})
+    currentDataSource = { source: 'api', is_mock: false }
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to stop deployment:', error)
+    throw new Error('无法停止部署')
   }
-  return apiPost<Deployment>(`/api/v1/deployments/${id}/stop`, {})
 }
 
 /**
  * 切换部署环境
  */
 export async function switchDeploymentEnvironment(id: string, environment: DeploymentEnvironment): Promise<Deployment> {
-  if (USE_MOCK) {
-    return mockSwitchEnvironment(id, environment)
+  try {
+    const deployment = await apiPost<Deployment>(`/api/v1/deployments/${id}/switch-env`, { environment })
+    currentDataSource = { source: 'api', is_mock: false }
+    return deployment
+  } catch (error) {
+    console.error('[DeploymentService] Failed to switch environment:', error)
+    throw new Error('无法切换部署环境')
   }
-  return apiPost<Deployment>(`/api/v1/deployments/${id}/switch-env`, { environment })
 }
 
 /**
